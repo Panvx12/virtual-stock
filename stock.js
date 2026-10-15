@@ -20,7 +20,7 @@ let lastIndexPrice = null;
 let holidayMap = {}; 
 
 let currentUser = null;
-let userWallet = { cash: 100000, shares: 0 };
+let userWallet = { cash: 100000, shares: 0, username: '' };
 
 function loadScript(url) {
     return new Promise((resolve, reject) => {
@@ -42,7 +42,7 @@ async function initApp() {
     try {
         await loadScript(CHART_SCRIPT_URL);
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        window.supabaseClient = supabaseClient;
+        window.supabaseClient = supabaseClient; // 💡 讓 articles.js 能夠共用 Supabase 連線
 
         setupAuthListeners();
         setupTradingListeners();
@@ -173,7 +173,7 @@ async function checkUserSession() {
         await loadUserWallet(currentUser.id);
     } else {
         currentUser = null;
-        userWallet = { cash: 100000, shares: 0 };
+        userWallet = { cash: 100000, shares: 0, username: '' };
     }
     updateAuthUI(session);
 }
@@ -185,20 +185,31 @@ async function loadUserWallet(userId) {
         .eq('user_id', userId)
         .single();
 
+    const metadataUsername = currentUser.user_metadata?.username;
+    const defaultUsername = metadataUsername || currentUser.email.split('@')[0];
+
     if (error || !data) {
-        // 如果找不到記錄，自動初始化配發 100,000 元
-        const initialWallet = { user_id: userId, cash: 100000, shares: 0 };
+        // 如果找不到記錄，自動初始化配發 100,000 元與用戶名
+        const initialWallet = { user_id: userId, username: defaultUsername, cash: 100000, shares: 0 };
         const { error: insertError } = await supabaseClient
             .from('user_data')
             .insert([initialWallet]);
         
         if (!insertError) {
-            userWallet = { cash: 100000, shares: 0 };
+            userWallet = { cash: 100000, shares: 0, username: defaultUsername };
         }
     } else {
-        userWallet = { cash: data.cash, shares: data.shares };
+        let currentUsername = data.username || defaultUsername;
+        if (!data.username) {
+            await supabaseClient
+                .from('user_data')
+                .update({ username: currentUsername })
+                .eq('user_id', userId);
+        }
+        userWallet = { cash: data.cash, shares: data.shares, username: currentUsername };
     }
     updateWalletUI();
+    updateAuthUI({ user: currentUser });
 }
 
 function updateWalletUI() {
@@ -214,18 +225,23 @@ function updateAuthUI(session) {
     const userInfo = document.getElementById('user-info');
     const authActionBtn = document.getElementById('auth-action-btn');
     const tradingPanel = document.getElementById('trading-panel');
+    const btnNewArticle = document.getElementById('btn-new-article');
+
     if (!userInfo || !authActionBtn) return;
 
     if (session && session.user) {
         userInfo.style.display = 'inline';
-        userInfo.innerText = session.user.email;
+        const displayName = userWallet.username || session.user.user_metadata?.username || session.user.email.split('@')[0];
+        userInfo.innerText = `👤 ${displayName}`;
         authActionBtn.innerText = 'Logout';
         if (tradingPanel) tradingPanel.style.display = 'flex';
+        if (btnNewArticle) btnNewArticle.style.display = 'inline-block';
     } else {
         userInfo.style.display = 'none';
         userInfo.innerText = '';
         authActionBtn.innerText = 'Login';
         if (tradingPanel) tradingPanel.style.display = 'none';
+        if (btnNewArticle) btnNewArticle.style.display = 'none';
     }
 }
 
@@ -292,7 +308,7 @@ async function saveUserWallet() {
     if (!currentUser) return;
     await supabaseClient
         .from('user_data')
-        .update({ cash: userWallet.cash, shares: userWallet.shares })
+        .update({ cash: userWallet.cash, shares: userWallet.shares, username: userWallet.username })
         .eq('user_id', currentUser.id);
 }
 
@@ -307,10 +323,13 @@ function setupAuthListeners() {
     if (!authActionBtn || !authModal) return;
 
     supabaseClient.auth.onAuthStateChange(async (event, session) => {
-        updateAuthUI(session);
         if (session && session.user) {
             currentUser = session.user;
             await loadUserWallet(currentUser.id);
+        } else {
+            currentUser = null;
+            userWallet = { cash: 100000, shares: 0, username: '' };
+            updateAuthUI(null);
         }
     });
 
@@ -352,6 +371,7 @@ function setupAuthListeners() {
 
     if (btnSignup) {
         btnSignup.addEventListener('click', async () => {
+            const usernameInput = document.getElementById('auth-username').value.trim();
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
             
@@ -361,7 +381,15 @@ function setupAuthListeners() {
             }
 
             authMessage.innerText = 'Signing up...';
-            const { error } = await supabaseClient.auth.signUp({ email, password });
+            const { error } = await supabaseClient.auth.signUp({ 
+                email, 
+                password,
+                options: {
+                    data: {
+                        username: usernameInput || email.split('@')[0]
+                    }
+                }
+            });
             
             if (error) {
                 authMessage.innerText = 'Sign up failed: ' + error.message;

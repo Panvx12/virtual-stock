@@ -1,5 +1,5 @@
 // ----------------------------------------------------
-// 獨立文章系統邏輯 (articles.js) - Supabase 雲端版
+// 獨立文章系統邏輯 (articles.js) - Supabase 雲端版 (支援自訂用戶名)
 // ----------------------------------------------------
 
 let articlesList = [];
@@ -69,15 +69,28 @@ function setupArticleListeners() {
             }
 
             const user = session.user;
-            const authorEmail = user.email ? user.email.split('@')[0] : '匿名';
 
-            // 寫入 Supabase 雲端資料庫
+            // 💡 從 user_data 資料表中查詢該用戶的自訂用戶名
+            let authorName = user.email ? user.email.split('@')[0] : '匿名';
+            const { data: userData, error: userError } = await client
+                .from('user_data')
+                .select('username')
+                .eq('user_id', user.id)
+                .single();
+
+            if (!userError && userData && userData.username) {
+                authorName = userData.username;
+            } else if (user.user_metadata && user.user_metadata.username) {
+                authorName = user.user_metadata.username;
+            }
+
+            // 寫入 Supabase 的 articles 雲端資料表
             const { error } = await client
                 .from('articles')
                 .insert([
                     {
                         user_id: user.id,
-                        author: authorEmail,
+                        author: authorName,
                         title: title,
                         content: content
                     }
@@ -102,8 +115,7 @@ async function loadArticles() {
 
     const client = window.supabaseClient;
     if (!client) {
-        // 如果 stock.js 還沒初始化完畢，稍後再試
-        setTimeout(loadArticles, 300);
+        setTimeout(loadArticles, 300); // 尚未準備好則稍後再試
         return;
     }
 
