@@ -32,7 +32,7 @@
         
         <div id="chart-container"></div>
 
-        <!-- 💡 新增：交易面板 (預設隱藏，登入後顯示) -->
+        <!-- 交易面板 -->
         <div id="trading-panel" class="trading-panel" style="display: none;">
             <div class="wallet-info">
                 <span>Cash: <strong id="user-cash">100,000.00</strong> TWD</span>
@@ -42,6 +42,29 @@
                 <input type="number" id="trade-qty" min="1" value="1000" placeholder="Shares" />
                 <button id="btn-buy" class="btn-buy">Buy</button>
                 <button id="btn-sell" class="btn-sell">Sell</button>
+            </div>
+        </div>
+
+        <!-- 股市討論與文章區域 -->
+        <div class="articles-section">
+            <div class="section-title">
+                <h2>股市討論與分析文章</h2>
+                <button id="btn-new-article" class="btn-primary" style="display: none;">發佈文章</button>
+            </div>
+
+            <!-- 發佈文章表單 (預設隱藏) -->
+            <div id="article-form-container" class="article-form" style="display: none;">
+                <input type="text" id="article-title-input" placeholder="文章標題..." />
+                <textarea id="article-content-input" rows="3" placeholder="撰寫您的分析或看法..."></textarea>
+                <div class="form-actions">
+                    <button id="btn-submit-article" class="btn-submit">發佈</button>
+                    <button id="btn-cancel-article" class="btn-alt">取消</button>
+                </div>
+            </div>
+
+            <!-- 文章列表 -->
+            <div id="articles-list" class="articles-list">
+                <p class="empty-msg">載入文章中...</p>
             </div>
         </div>
     </div>
@@ -63,6 +86,7 @@
         </div>
     </div>
 
+    <script src="articles.js"></script> <!-- 💡 載入獨立的文章模組 -->
     <script src="chart.js"></script>
 </body>
 </html>
