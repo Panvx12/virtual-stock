@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>鬆餅股市行情</title>
+    <link rel="stylesheet" href="basic_style.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+
+    <div class="stock-card">
+        <div class="card-header">
+            <div>
+                <h1>鬆餅股市行情 <span class="stock-code">(代號: 8271)</span></h1>
+                <p id="index-status" class="status-text">Connecting to cloud database...</p>
+            </div>
+            
+            <div class="header-right">
+                <div class="user-bar">
+                    <span id="user-info" style="display: none;"></span>
+                    <button id="auth-action-btn" class="btn-primary">Login</button>
+                </div>
+
+                <div class="price-info">
+                    <div id="current-price" class="current-price text-green">10.00</div>
+                    <div id="price-change" class="price-change text-green">+0.00 (+0.00%)</div>
+                </div>
+            </div>
+        </div>
+        
+        <div id="chart-container"></div>
+
+        <!-- 💡 新增：交易面板 (預設隱藏，登入後顯示) -->
+        <div id="trading-panel" class="trading-panel" style="display: none;">
+            <div class="wallet-info">
+                <span>Cash: <strong id="user-cash">100,000.00</strong> TWD</span>
+                <span>Holdings: <strong id="user-shares">0</strong> Shares</span>
+            </div>
+            <div class="trade-controls">
+                <input type="number" id="trade-qty" min="1" value="1000" placeholder="Shares" />
+                <button id="btn-buy" class="btn-buy">Buy</button>
+                <button id="btn-sell" class="btn-sell">Sell</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 會員登入 / 註冊彈出視窗 -->
+    <div id="auth-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <span id="close-modal" class="close">&times;</span>
+            <h2>Member Login / Sign Up</h2>
+            <form id="auth-form">
+                <input type="email" id="auth-email" placeholder="Email" required />
+                <input type="password" id="auth-password" placeholder="Password (min 6 characters)" required />
+                <div class="modal-buttons">
+                    <button type="submit" id="btn-login" class="btn-submit">Login</button>
+                    <button type="button" id="btn-signup" class="btn-alt">Sign Up</button>
+                </div>
+            </form>
+            <p id="auth-message" class="auth-msg"></p>
+        </div>
+    </div>
+
+    <script src="chart.js"></script>
+</body>
+</html>
