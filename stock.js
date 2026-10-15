@@ -6,6 +6,9 @@ const CHART_SCRIPT_URL = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightw
 const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co'; 
 const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 
+// 設定歷史 K 棒的最大保留數量上限（例如最多保留 500 筆，可依需求自行調整）
+const MAX_HISTORY_LIMIT = 500;
+
 let supabaseClient = null;
 let chart = null;
 let candlestickSeries = null;
@@ -42,7 +45,7 @@ async function initApp() {
     try {
         await loadScript(CHART_SCRIPT_URL);
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        window.supabaseClient = supabaseClient; // 💡 讓 articles.js 能夠共用 Supabase 連線
+        window.supabaseClient = supabaseClient; // 讓 articles.js 能夠共用 Supabase 連線
 
         setupAuthListeners();
         setupTradingListeners();
@@ -111,6 +114,13 @@ async function initApp() {
                     close: activeClose,
                 };
                 candleList.push(newCandle);
+
+                // 💡 檢查並限制陣列長度不超過上限，超出時切除最舊的資料
+                if (candleList.length > MAX_HISTORY_LIMIT) {
+                    candleList = candleList.slice(-MAX_HISTORY_LIMIT);
+                    candlestickSeries.setData(candleList); // 同步更新圖表顯示
+                }
+
                 activeCandleTime = nowTime;
                 activeOpen = activeClose;
                 activeHigh = activeClose;
@@ -189,7 +199,6 @@ async function loadUserWallet(userId) {
     const defaultUsername = metadataUsername || currentUser.email.split('@')[0];
 
     if (error || !data) {
-        // 如果找不到記錄，自動初始化配發 100,000 元與用戶名
         const initialWallet = { user_id: userId, username: defaultUsername, cash: 100000, shares: 0 };
         const { error: insertError } = await supabaseClient
             .from('user_data')
@@ -479,6 +488,12 @@ async function loadStockData() {
 
     if (data && data.history && data.history.length > 0) {
         candleList = data.history;
+
+        // 💡 從資料庫載入時，若歷史資料超過上限也進行裁切
+        if (candleList.length > MAX_HISTORY_LIMIT) {
+            candleList = candleList.slice(-MAX_HISTORY_LIMIT);
+        }
+
         candlestickSeries.setData(candleList);
         chart.timeScale().fitContent();
 
