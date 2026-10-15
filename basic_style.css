@@ -9,13 +9,16 @@ body {
     background-color: #111827;
     color: #f3f4f6;
     display: flex;
-    justify-content: center;
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: center;
+    justify-content: flex-start;
     min-height: 100vh;
-    padding: 20px;
+    padding: 30px 20px;
+    gap: 20px; /* 上下兩個區塊之間的間距 */
 }
 
-.stock-card {
+/* 股市卡片與文章專區共用外觀與最大寬度 */
+.stock-card, .articles-container {
     background-color: #1f2937;
     border: 1px solid #374151;
     border-radius: 12px;
@@ -171,22 +174,17 @@ h1 {
 }
 .btn-sell:hover { background-color: #16a34a; }
 
-/* 💡 新增：文章區域樣式 */
-.articles-section {
-    margin-top: 24px;
-    border-top: 1px solid #374151;
-    padding-top: 16px;
-}
-.section-title {
+/* 獨立文章專區樣式 */
+.articles-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
 }
-.section-title h2 {
-    font-size: 1rem;
+.articles-header h2 {
+    font-size: 1.1rem;
     font-weight: 600;
-    color: #f3f4f6;
+    color: #f9fafb;
 }
 .article-form {
     display: flex;
@@ -316,10 +314,11 @@ h1 {
     margin-top: 4px;
 }
 .btn-submit {
+    flex: 1;
     background-color: #2563eb;
     color: white;
     border: none;
-    padding: 8px 16px;
+    padding: 8px;
     border-radius: 6px;
     cursor: pointer;
     font-weight: 500;
@@ -327,10 +326,11 @@ h1 {
 }
 .btn-submit:hover { background-color: #1d4ed8; }
 .btn-alt {
+    flex: 1;
     background-color: #374151;
     color: #d1d5db;
     border: none;
-    padding: 8px 16px;
+    padding: 8px;
     border-radius: 6px;
     cursor: pointer;
     font-size: 0.85rem;

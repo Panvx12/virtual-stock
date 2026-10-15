@@ -1,8 +1,17 @@
 // ----------------------------------------------------
-// Articles Component (獨立文章模組)
+// 獨立文章系統邏輯 (articles.js)
 // ----------------------------------------------------
 
 let articlesList = [];
+
+document.addEventListener('DOMContentLoaded', () => {
+    initArticlesApp();
+});
+
+async function initArticlesApp() {
+    setupArticleListeners();
+    await loadArticles();
+}
 
 function setupArticleListeners() {
     const btnNewArticle = document.getElementById('btn-new-article');
@@ -26,11 +35,6 @@ function setupArticleListeners() {
 
     if (btnSubmit) {
         btnSubmit.addEventListener('click', async () => {
-            if (!typeof currentUser !== 'undefined' && !currentUser) {
-                alert('請先登入會員。');
-                return;
-            }
-
             const title = document.getElementById('article-title-input').value.trim();
             const content = document.getElementById('article-content-input').value.trim();
 
@@ -39,21 +43,19 @@ function setupArticleListeners() {
                 return;
             }
 
-            const authorEmail = currentUser && currentUser.email ? currentUser.email.split('@')[0] : '訪客';
             const nowTime = new Date().toISOString().replace('T', ' ').substring(0, 19);
 
             const newArticle = {
                 id: Date.now(),
-                author: authorEmail,
+                author: '訪客',
                 title: title,
                 content: content,
                 created_at: nowTime
             };
 
-            // 存入陣列最前方
             articlesList.unshift(newArticle);
 
-            // 清空輸入框並隱藏表單
+            // 清空並隱藏
             document.getElementById('article-title-input').value = '';
             document.getElementById('article-content-input').value = '';
             formContainer.style.display = 'none';
@@ -88,7 +90,7 @@ function renderArticles() {
     if (!listEl) return;
 
     if (!articlesList || articlesList.length === 0) {
-        listEl.innerHTML = `<p class="empty-msg">目前尚無討論文章，登入後搶先發表！</p>`;
+        listEl.innerHTML = `<p class="empty-msg">目前尚無文章，點擊上方按鈕發佈第一篇文章吧！</p>`;
         return;
     }
 
