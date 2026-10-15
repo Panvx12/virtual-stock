@@ -42,6 +42,7 @@ async function initApp() {
     try {
         await loadScript(CHART_SCRIPT_URL);
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        window.supabaseClient = supabaseClient;
 
         setupAuthListeners();
         setupTradingListeners();

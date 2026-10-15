@@ -1,5 +1,5 @@
 // ----------------------------------------------------
-// 獨立文章系統邏輯 (articles.js)
+// 獨立文章系統邏輯 (articles.js) - Supabase 雲端版
 // ----------------------------------------------------
 
 let articlesList = [];
@@ -20,7 +20,20 @@ function setupArticleListeners() {
     const btnSubmit = document.getElementById('btn-submit-article');
 
     if (btnNewArticle) {
-        btnNewArticle.addEventListener('click', () => {
+        btnNewArticle.addEventListener('click', async () => {
+            const client = window.supabaseClient;
+            if (!client) {
+                alert('系統初始化中，請稍後再試。');
+                return;
+            }
+            
+            // 檢查會員是否已登入
+            const { data: { session } } = await client.auth.getSession();
+            if (!session || !session.user) {
+                alert('請先點擊右上角登入會員，才能發佈文章！');
+                return;
+            }
+            
             formContainer.style.display = formContainer.style.display === 'none' ? 'flex' : 'none';
         });
     }
@@ -35,6 +48,18 @@ function setupArticleListeners() {
 
     if (btnSubmit) {
         btnSubmit.addEventListener('click', async () => {
+            const client = window.supabaseClient;
+            if (!client) {
+                alert('資料庫連線尚未初始化。');
+                return;
+            }
+
+            const { data: { session } } = await client.auth.getSession();
+            if (!session || !session.user) {
+                alert('請先登入會員。');
+                return;
+            }
+
             const title = document.getElementById('article-title-input').value.trim();
             const content = document.getElementById('article-content-input').value.trim();
 
@@ -43,25 +68,30 @@ function setupArticleListeners() {
                 return;
             }
 
-            const nowTime = new Date().toISOString().replace('T', ' ').substring(0, 19);
+            const user = session.user;
+            const authorEmail = user.email ? user.email.split('@')[0] : '匿名';
 
-            const newArticle = {
-                id: Date.now(),
-                author: '訪客',
-                title: title,
-                content: content,
-                created_at: nowTime
-            };
+            // 寫入 Supabase 雲端資料庫
+            const { error } = await client
+                .from('articles')
+                .insert([
+                    {
+                        user_id: user.id,
+                        author: authorEmail,
+                        title: title,
+                        content: content
+                    }
+                ]);
 
-            articlesList.unshift(newArticle);
-
-            // 清空並隱藏
-            document.getElementById('article-title-input').value = '';
-            document.getElementById('article-content-input').value = '';
-            formContainer.style.display = 'none';
-
-            renderArticles();
-            alert('文章發佈成功！');
+            if (error) {
+                alert('發佈失敗：' + error.message);
+            } else {
+                document.getElementById('article-title-input').value = '';
+                document.getElementById('article-content-input').value = '';
+                formContainer.style.display = 'none';
+                await loadArticles();
+                alert('文章發佈成功！');
+            }
         });
     }
 }
@@ -70,18 +100,25 @@ async function loadArticles() {
     const listEl = document.getElementById('articles-list');
     if (!listEl) return;
 
-    try {
-        const response = await fetch('articles.json');
-        if (response.ok) {
-            articlesList = await response.json();
-        } else {
-            articlesList = [];
-        }
-    } catch (error) {
-        console.warn('無法載入 articles.json，使用預設或空資料。', error);
-        articlesList = [];
+    const client = window.supabaseClient;
+    if (!client) {
+        // 如果 stock.js 還沒初始化完畢，稍後再試
+        setTimeout(loadArticles, 300);
+        return;
     }
 
+    const { data, error } = await client
+        .from('articles')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+    if (error) {
+        console.warn('無法從 Supabase 讀取文章', error);
+        listEl.innerHTML = `<p class="empty-msg">讀取文章失敗或資料表尚未建立。</p>`;
+        return;
+    }
+
+    articlesList = data || [];
     renderArticles();
 }
 
@@ -90,19 +127,26 @@ function renderArticles() {
     if (!listEl) return;
 
     if (!articlesList || articlesList.length === 0) {
-        listEl.innerHTML = `<p class="empty-msg">目前尚無文章，點擊上方按鈕發佈第一篇文章吧！</p>`;
+        listEl.innerHTML = `<p class="empty-msg">目前尚無討論文章，登入後搶先發表！</p>`;
         return;
     }
 
-    listEl.innerHTML = articlesList.map(article => `
-        <div class="article-card">
-            <div class="article-card-header">
-                <span class="article-card-title">${escapeHtml(article.title)}</span>
-                <span class="article-card-author">由 ${escapeHtml(article.author || '匿名')} 發表 (${article.created_at || ''})</span>
+    listEl.innerHTML = articlesList.map(article => {
+        let dateStr = '';
+        if (article.created_at) {
+            const date = new Date(article.created_at);
+            dateStr = date.toLocaleString('zh-TW', { hour12: false });
+        }
+        return `
+            <div class="article-card">
+                <div class="article-card-header">
+                    <span class="article-card-title">${escapeHtml(article.title)}</span>
+                    <span class="article-card-author">由 ${escapeHtml(article.author || '匿名')} 發表 (${dateStr})</span>
+                </div>
+                <div class="article-card-content">${escapeHtml(article.content)}</div>
             </div>
-            <div class="article-card-content">${escapeHtml(article.content)}</div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
 }
 
 function escapeHtml(str) {
