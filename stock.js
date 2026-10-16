@@ -3,7 +3,7 @@ const CHART_SCRIPT_URL = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightw
 const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co'; 
 const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 
-const MAX_HISTORY_LIMIT = 50;
+const MAX_HISTORY_LIMIT = 500;
 const UPDATE_FREQUENCY = 60000; // 60 秒更新一次
 
 let supabaseClient = null;
@@ -63,7 +63,7 @@ async function initApp() {
                 timeVisible: true,
                 secondsVisible: true,
                 fixLeftEdge: true,
-                rightOffset: 0, // 💡 讓最新 K 棒緊貼最右側，舊的向左推
+                rightOffset: 0, // 讓最新 K 棒緊貼最右側，舊的向左推
             },
         });
 
@@ -94,14 +94,20 @@ async function initApp() {
             const trendData = await fetchTaiwanIndexTrend();
             if (!trendData) return;
 
-            const stockChange = (Math.random() - 0.48) * 0.15; 
-            let newPrice = activeClose + stockChange;
+            // 💡 強制確保每一根 K 棒的開收盤價有明顯起伏，避免出現扁平橫線
+            let stockChange = (Math.random() - 0.48) * 0.2; 
+            if (Math.abs(stockChange) < 0.03) {
+                stockChange = stockChange >= 0 ? 0.03 : -0.03;
+            }
+            
+            let newPrice = activeOpen + stockChange;
             newPrice = parseFloat(newPrice.toFixed(2));
             if (newPrice < 0.5) newPrice = 0.5;
 
             activeClose = newPrice;
 
-            const wickSpread = 0.04 + (Math.random() * 0.08);
+            // 💡 放大上下影線範圍，使高低點更飽滿立體
+            const wickSpread = 0.05 + (Math.random() * 0.1);
             const currentHigh = parseFloat((Math.max(activeOpen, activeClose) + wickSpread).toFixed(2));
             const currentLow = parseFloat((Math.min(activeOpen, activeClose) - wickSpread).toFixed(2));
 
@@ -124,7 +130,6 @@ async function initApp() {
                     candleList = candleList.slice(-MAX_HISTORY_LIMIT);
                 }
                 
-                // 💡 確保每次新增或更新時，資料與畫面都完整跟隨最新進度
                 candlestickSeries.setData(candleList);
 
                 activeCandleTime = nowTime;
@@ -485,7 +490,7 @@ async function loadStockData() {
         }
 
         candlestickSeries.setData(candleList);
-        chart.timeScale().scrollToPosition(0, false); // 確保載入時停在最右側
+        chart.timeScale().scrollToPosition(0, false);
 
         const lastCandle = candleList[candleList.length - 1];
         activeClose = lastCandle.close;
