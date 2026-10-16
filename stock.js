@@ -72,6 +72,7 @@ async function initApp() {
             },
         });
 
+        // 💡 建立 K 線圖系列，並為 10 元股價設定精準的小數位數與格式
         candlestickSeries = chart.addCandlestickSeries({
             upColor: '#ef4444',      
             downColor: '#22c55e',    
@@ -79,6 +80,11 @@ async function initApp() {
             borderDownColor: '#22c55e',
             wickUpColor: '#ef4444',
             wickDownColor: '#22c55e',
+            priceFormat: {
+                type: 'price',
+                precision: 2,
+                minMove: 0.01,
+            },
         });
 
         await loadStockData();
@@ -90,22 +96,22 @@ async function initApp() {
                 return;
             }
 
-            // 💡 使用穩定、高效的內建擬真趨勢模擬（完全避開外部 403 / 408 逾時錯誤）
             const trendData = await fetchTaiwanIndexTrend();
             if (!trendData) return;
 
-            const stockChange = activeClose * (trendData.percentChange / 100);
+            // 💡 針對 10 元級距設計的合理價格跳動範圍
+            const stockChange = (Math.random() - 0.48) * 0.08; 
             
             let newPrice = activeClose + stockChange;
             newPrice = parseFloat(newPrice.toFixed(2));
-            if (newPrice < 0.01) newPrice = 0.01;
+            if (newPrice < 0.5) newPrice = 0.5;
 
             activeClose = newPrice;
 
-            // 💡 為了讓 K 棒長出真實的上下影線（Wick），讓 High 和 Low 隨機超越當前價格一點點
-            const randomSpread = activeClose * 0.003 * Math.random(); 
-            const currentHigh = parseFloat((Math.max(activeOpen, activeClose) + randomSpread).toFixed(2));
-            const currentLow = parseFloat((Math.min(activeOpen, activeClose) - randomSpread).toFixed(2));
+            // 💡 讓 10 元股價也能長出漂亮的上下影線與實體方塊
+            const wickSpread = 0.02 + (Math.random() * 0.05);
+            const currentHigh = parseFloat((Math.max(activeOpen, activeClose) + wickSpread).toFixed(2));
+            const currentLow = parseFloat((Math.min(activeOpen, activeClose) - wickSpread).toFixed(2));
 
             if (currentHigh > activeHigh) activeHigh = currentHigh;
             if (currentLow < activeLow) activeLow = currentLow;
@@ -153,19 +159,22 @@ async function initApp() {
 
             const priceEl = document.getElementById('current-price');
             const changeEl = document.getElementById('price-change');
-            priceEl.innerText = activeClose.toFixed(2);
+            if (priceEl) priceEl.innerText = activeClose.toFixed(2);
             
+            // 💡 即時計算相對於當日開盤價（activeOpen）的漲跌金額與百分比
             const diff = (activeClose - activeOpen).toFixed(2);
-            const percent = ((diff / activeOpen) * 100).toFixed(2);
+            const percent = activeOpen > 0 ? ((diff / activeOpen) * 100).toFixed(2) : '0.00';
             
-            if (diff >= 0) {
-                priceEl.className = "current-price text-green";
-                changeEl.className = "price-change text-green";
-                changeEl.innerText = `+${diff} (+${percent}%)`;
-            } else {
-                priceEl.className = "current-price text-red";
-                changeEl.className = "price-change text-red";
-                changeEl.innerText = `${diff} (${percent}%)`;
+            if (changeEl) {
+                if (diff >= 0) {
+                    if (priceEl) priceEl.className = "current-price text-green";
+                    changeEl.className = "price-change text-green";
+                    changeEl.innerText = `+${diff} (+${percent}%)`;
+                } else {
+                    if (priceEl) priceEl.className = "current-price text-red";
+                    changeEl.className = "price-change text-red";
+                    changeEl.innerText = `${diff} (${percent}%)`;
+                }
             }
 
         }, UPDATE_FREQUENCY);
@@ -176,7 +185,8 @@ async function initApp() {
 
     } catch (error) {
         console.error('Application initialization failed:', error);
-        document.getElementById('index-status').innerText = 'Loading failed; please check your network or script source.';
+        const statusEl = document.getElementById('index-status');
+        if (statusEl) statusEl.innerText = 'Loading failed; please check your network or script source.';
     }
 }
 
@@ -467,7 +477,6 @@ function checkTaiwanMarketOpen() {
 }
 
 async function fetchTaiwanIndexTrend() {
-    // 💡 內建穩定且擬真的隨機趨勢演算法（完美取代會逾時的外部 API）
     const randomPercent = (Math.random() - 0.49) * 0.8; 
     return { 
         percentChange: randomPercent, 
@@ -501,17 +510,37 @@ async function loadStockData() {
         candleList = [];
     }
     updateMarketStatusText();
+    
+    // 💡 載入歷史資料後立即更新一次畫面的價格與百分比
+    const priceEl = document.getElementById('current-price');
+    const changeEl = document.getElementById('price-change');
+    if (priceEl && changeEl) {
+        priceEl.innerText = activeClose.toFixed(2);
+        const diff = (activeClose - activeOpen).toFixed(2);
+        const percent = activeOpen > 0 ? ((diff / activeOpen) * 100).toFixed(2) : '0.00';
+        if (diff >= 0) {
+            priceEl.className = "current-price text-green";
+            changeEl.className = "price-change text-green";
+            changeEl.innerText = `+${diff} (+${percent}%)`;
+        } else {
+            priceEl.className = "current-price text-red";
+            changeEl.className = "price-change text-red";
+            changeEl.innerText = `${diff} (${percent}%)`;
+        }
+    }
 }
 
 function updateMarketStatusText() {
     const isOpen = checkTaiwanMarketOpen();
     const statusEl = document.getElementById('index-status');
-    if (isOpen) {
-        statusEl.innerText = '🟢 Market Open';
-        statusEl.style.color = '#22c55e';
-    } else {
-        statusEl.innerText = '🔴 Market Closed';
-        statusEl.style.color = '#ef4444';
+    if (statusEl) {
+        if (isOpen) {
+            statusEl.innerText = '🟢 Market Open';
+            statusEl.style.color = '#22c55e';
+        } else {
+            statusEl.innerText = '🔴 Market Closed';
+            statusEl.style.color = '#ef4444';
+        }
     }
 }
 
