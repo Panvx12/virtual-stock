@@ -3,8 +3,17 @@ const CHART_SCRIPT_URL = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightw
 const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co'; 
 const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 
-const MAX_HISTORY_LIMIT = 50;
-const UPDATE_FREQUENCY = 60000; // 60 秒更新一次
+const MAX_HISTORY_LIMIT = 300; // 約 5 個交易日的 5 分鐘 K 線
+const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情；不會每次寫入 Supabase
+const CANDLE_BATCH_SIZE = 5; // 累積 5 根已完成 K 線後才批次儲存
+const MARKET_DATA_URL = SUPABASE_URL + '/functions/v1/market-data';
+
+let marketPollTimer = null;
+let isPollingMarket = false;
+let appInitialized = false;
+let lastRenderedTime = null;
+let completedCandleTimes = new Set();
+let pendingCompletedCandles = [];
 
 let supabaseClient = null;
 let chart = null;
@@ -37,16 +46,21 @@ function loadScript(url) {
 }
 
 async function initApp() {
+    if (appInitialized) return;
+    appInitialized = true;
+
     try {
         await loadScript(CHART_SCRIPT_URL);
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        window.supabaseClient = supabaseClient; 
+        window.supabaseClient = supabaseClient;
 
         setupAuthListeners();
         setupTradingListeners();
         await checkUserSession();
 
         const chartContainer = document.getElementById('chart-container');
+        if (!chartContainer) throw new Error('Missing #chart-container');
+
         chart = LightweightCharts.createChart(chartContainer, {
             width: chartContainer.clientWidth,
             height: 300,
@@ -61,147 +75,39 @@ async function initApp() {
             },
             timeScale: {
                 timeVisible: true,
-                secondsVisible: true,
-                fixLeftEdge: true,
-                rightOffset: 0, // 讓最新 K 棒緊貼最右側，舊的向左推
+                secondsVisible: false,
+                fixLeftEdge: false,
+                rightOffset: 3,
+                rightBarStaysOnScroll: true,
             },
         });
 
         candlestickSeries = chart.addCandlestickSeries({
-            upColor: '#ef4444',          // 紅漲
-            downColor: '#22c55e',        // 綠跌
+            upColor: '#ef4444',
+            downColor: '#22c55e',
             borderUpColor: '#ef4444',
             borderDownColor: '#22c55e',
             wickUpColor: '#ef4444',
             wickDownColor: '#22c55e',
-            wickVisible: true,           // 強制顯示上下影線
-            priceFormat: {
-                type: 'price',
-                precision: 2,
-                minMove: 0.01,
-            },
+            wickVisible: true,
+            priceFormat: { type: 'price', precision: 2, minMove: 0.01 },
         });
 
         await loadStockData();
+        updateMarketStatusText();
 
-        setInterval(async () => {
-            updateMarketStatusText();
-
-            if (!checkTaiwanMarketOpen()) {
-                return;
-            }
-
-            const trendData = await fetchTaiwanIndexTrend();
-            if (!trendData) return;
-
-            // 模擬較自然的股價波動
-            // 以前一個價格為基準，避免每次都大幅漲跌
-            const previousPrice = activeClose;
-
-            // 使用多次隨機值，讓漲跌更接近自然波動
-            const volatility = Math.max(previousPrice * 0.002, 0.01);
-            const stockChange =
-                (Math.random() + Math.random() + Math.random() - 1.5)
-                * volatility;
-
-            let newPrice = parseFloat(
-                (previousPrice + stockChange).toFixed(2)
-            );
-            if (newPrice < 0.5) newPrice = 0.5;
-            activeClose = newPrice;
-            // 依據開盤價與目前價格，生成較小的上下影線
-            const wickSpread = Math.max(
-                previousPrice * (0.0005 + Math.random() * 0.002),
-                0.01
-            );
-            const currentHigh = parseFloat(
-                (Math.max(activeOpen, activeClose) + wickSpread).toFixed(2)
-            );
-            const currentLow = Math.max(
-                0.5,
-                parseFloat(
-                    (Math.min(activeOpen, activeClose) - wickSpread).toFixed(2)
-                )
-            );
-            // 持續記錄這根 K 棒的最高價與最低價
-            if (currentHigh > activeHigh) {
-                activeHigh = currentHigh;
-            }
-            if (currentLow < activeLow) {
-                activeLow = currentLow;
-            }
-
-            const nowTime = Math.floor(Date.now() / 1000);
-            
-            if (nowTime - activeCandleTime >= 60) {
-                const newCandle = {
-                    time: activeCandleTime,
-                    open: activeOpen,
-                    high: activeHigh,
-                    low: activeLow,
-                    close: activeClose,
-                };
-                candleList.push(newCandle);
-
-                if (candleList.length > MAX_HISTORY_LIMIT) {
-                    candleList = candleList.slice(-MAX_HISTORY_LIMIT);
-                }
-                
-                candlestickSeries.setData(candleList);
-
-                activeCandleTime = nowTime;
-                activeOpen = activeClose;
-                activeHigh = activeClose;
-                activeLow = activeClose;
-            }
-
-            const currentCandle = {
-                time: activeCandleTime,
-                open: activeOpen,
-                high: activeHigh,
-                low: activeLow,
-                close: activeClose,
-            };
-
-            if (candleList.length > 0) {
-                candleList[candleList.length - 1] = currentCandle;
-            } else {
-                candleList.push(currentCandle);
-            }
-
-            candlestickSeries.update(currentCandle);
-
-            await saveToSupabase();
-
-            const priceEl = document.getElementById('current-price');
-            const changeEl = document.getElementById('price-change');
-            if (priceEl) priceEl.innerText = activeClose.toFixed(2);
-            
-            const diff = (activeClose - activeOpen).toFixed(2);
-            const percent = activeOpen > 0 ? ((diff / activeOpen) * 100).toFixed(2) : '0.00';
-            
-            if (changeEl) {
-                if (diff >= 0) {
-                    if (priceEl) priceEl.className = "current-price text-green";
-                    changeEl.className = "price-change text-green";
-                    changeEl.innerText = `+${diff} (+${percent}%)`;
-                } else {
-                    if (priceEl) priceEl.className = "current-price text-red";
-                    changeEl.className = "price-change text-red";
-                    changeEl.innerText = `${diff} (${percent}%)`;
-                }
-            }
-
-        }, UPDATE_FREQUENCY);
+        if (marketPollTimer) clearInterval(marketPollTimer);
+        marketPollTimer = setInterval(refreshMarketData, UPDATE_FREQUENCY);
 
         window.addEventListener('resize', () => {
-            chart.resize(chartContainer.clientWidth, 300);
+            if (chart && chartContainer.isConnected) {
+                chart.resize(chartContainer.clientWidth, 300);
+            }
         });
-
     } catch (error) {
         console.error('Application initialization failed:', error);
         const statusEl = document.getElementById('index-status');
-        if (statusEl) statusEl.innerText = 'Loading failed; please check your network.';
+        if (statusEl) statusEl.innerText = '初始化失敗；請檢查網路及行情 API 設定。';
     }
 }
 
@@ -440,123 +346,201 @@ function setupAuthListeners() {
     }
 }
 
-async function loadTaiwanCalendar() {
-    try {
-        const now = new Date();
-        const year = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric' }).format(now);
-        const url = `https://cdn.jsdelivr.net/gh/ruyut/TaiwanCalendar/data/${year}.json`;
-        const response = await fetch(url);
-        const data = await response.json();
-        data.forEach(item => { holidayMap[item.date] = item.isHoliday; });
-    } catch (error) {
-        console.error('Failed to load Taiwan calendar', error);
-    }
-}
-
-function checkTaiwanMarketOpen() {
-    const now = new Date();
-    const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' });
-    const dateParts = formatter.formatToParts(now);
-    let y = '', m = '', d = '';
-    dateParts.forEach(p => {
-        if (p.type === 'year') y = p.value;
-        if (p.type === 'month') m = p.value;
-        if (p.type === 'day') d = p.value;
+async function fetchMarketBars() {
+    const response = await fetch(MARKET_DATA_URL, {
+        method: 'GET',
+        headers: { apikey: SUPABASE_ANON_KEY },
+        cache: 'no-store',
     });
-    const dateKey = `${y}${m}${d}`;
-    
-    if (holidayMap[dateKey] !== undefined) {
-        if (holidayMap[dateKey]) return false;
-    } else {
-        const timeFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', weekday: 'short' });
-        const weekday = timeFormatter.format(now);
-        if (weekday === 'Sat' || weekday === 'Sun') return false;
+    if (!response.ok) {
+        throw new Error('Market API request failed: HTTP ' + response.status);
     }
-    
-    const timeFormatterDetail = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Taipei', hour12: false, hour: '2-digit', minute: '2-digit' });
-    const parts = timeFormatterDetail.formatToParts(now);
-    let hour = 0, minute = 0;
-    parts.forEach(p => {
-        if (p.type === 'hour') hour = parseInt(p.value, 10);
-        if (p.type === 'minute') minute = parseInt(p.value, 10);
-    });
-    
-    const totalMinutes = hour * 60 + minute;
-    return totalMinutes >= (9 * 60) && totalMinutes <= (13 * 60 + 30);
-}
 
-async function fetchTaiwanIndexTrend() {
-    const randomPercent = (Math.random() - 0.49) * 0.8; 
-    return { 
-        percentChange: randomPercent, 
-        totalDayPercent: randomPercent 
-    };
+    const payload = await response.json();
+    if (!payload || !Array.isArray(payload.bars) || payload.bars.length === 0) {
+        throw new Error((payload && payload.error) || '行情 API 沒有回傳 K 線資料');
+    }
+
+    return payload.bars
+        .filter((bar) =>
+            Number.isFinite(bar.time) &&
+            Number.isFinite(bar.open) &&
+            Number.isFinite(bar.high) &&
+            Number.isFinite(bar.low) &&
+            Number.isFinite(bar.close) &&
+            bar.high >= Math.max(bar.open, bar.close) &&
+            bar.low <= Math.min(bar.open, bar.close) &&
+            bar.high >= bar.low
+        )
+        .sort((a, b) => a.time - b.time)
+        .filter((bar, index, all) => index === 0 || bar.time > all[index - 1].time)
+        .slice(-MAX_HISTORY_LIMIT);
 }
 
 async function loadStockData() {
-    await loadTaiwanCalendar();
-    const { data, error } = await supabaseClient.from('stock_data').select('*').eq('id', 1).single();
+    let bars = [];
+    try {
+        bars = await fetchMarketBars();
+        const sourceLabel = 'Yahoo Finance · 5 分鐘（可能延遲）';
+        const statusEl = document.getElementById('index-status');
+        if (statusEl) {
+            statusEl.innerText = sourceLabel;
+            statusEl.style.color = '#9ca3af';
+        }
+    } catch (apiError) {
+        console.warn('外部行情暫時不可用，嘗試讀取既有 Supabase 快取：', apiError);
+        const { data, error } = await supabaseClient
+            .from('stock_data')
+            .select('history')
+            .eq('id', 1)
+            .maybeSingle();
 
-    if (error) return;
-
-    if (data && data.history && data.history.length > 0) {
-        candleList = data.history;
-
-        if (candleList.length > MAX_HISTORY_LIMIT) {
-            candleList = candleList.slice(-MAX_HISTORY_LIMIT);
+        if (!error && data && Array.isArray(data.history)) {
+            bars = data.history
+                .filter((bar) => bar && Number.isFinite(bar.time) &&
+                    Number.isFinite(bar.open) && Number.isFinite(bar.high) &&
+                    Number.isFinite(bar.low) && Number.isFinite(bar.close))
+                .slice(-MAX_HISTORY_LIMIT);
         }
 
-        candlestickSeries.setData(candleList);
-        chart.timeScale().scrollToPosition(0, false);
-
-        const lastCandle = candleList[candleList.length - 1];
-        activeClose = lastCandle.close;
-        activeOpen = lastCandle.open;
-        activeHigh = lastCandle.high;
-        activeLow = lastCandle.low;
-        activeCandleTime = lastCandle.time;
-    } else {
-        candleList = [];
+        const statusEl = document.getElementById('index-status');
+        if (statusEl) {
+            statusEl.innerText = bars.length
+                ? '⚠ 外部行情暫時不可用；顯示 Supabase 快取（非即時）'
+                : '⚠ 行情 API 無法使用，且沒有可用快取';
+            statusEl.style.color = '#f59e0b';
+        }
     }
-    updateMarketStatusText();
-    
+
+    candleList = bars;
+    completedCandleTimes = new Set(
+        bars.slice(0, Math.max(0, bars.length - 1)).map((bar) => bar.time)
+    );
+    pendingCompletedCandles = [];
+    lastRenderedTime = bars.length ? bars[bars.length - 1].time : null;
+
+    if (bars.length) {
+        candlestickSeries.setData(bars);
+        chart.timeScale().scrollToRealTime();
+
+        const last = bars[bars.length - 1];
+        activeClose = last.close;
+        activeOpen = last.open;
+        activeHigh = last.high;
+        activeLow = last.low;
+        activeCandleTime = last.time;
+        renderPriceSummary(last);
+    } else {
+        candlestickSeries.setData([]);
+    }
+}
+
+async function refreshMarketData() {
+    if (isPollingMarket || !supabaseClient || !candlestickSeries) return;
+    isPollingMarket = true;
+
+    try {
+        const bars = await fetchMarketBars();
+        if (!bars.length) return;
+
+        // Incremental update only: update the previous current candle and any new bars.
+        for (const bar of bars) {
+            if (lastRenderedTime === null || bar.time >= lastRenderedTime) {
+                candlestickSeries.update(bar);
+                lastRenderedTime = bar.time;
+            }
+        }
+
+        candleList = bars;
+        const latest = bars[bars.length - 1];
+        activeClose = latest.close;
+        activeOpen = latest.open;
+        activeHigh = latest.high;
+        activeLow = latest.low;
+        activeCandleTime = latest.time;
+        renderPriceSummary(latest);
+
+        // Yahoo's last bar may still be forming. Only bars preceding the last bar are considered complete.
+        for (const bar of bars.slice(0, -1)) {
+            if (!completedCandleTimes.has(bar.time)) {
+                completedCandleTimes.add(bar.time);
+                pendingCompletedCandles.push(bar);
+            }
+        }
+
+        if (pendingCompletedCandles.length >= CANDLE_BATCH_SIZE) {
+            const saved = await saveToSupabase();
+            if (saved) pendingCompletedCandles = [];
+        }
+
+        const statusEl = document.getElementById('index-status');
+        if (statusEl) {
+            statusEl.innerText = 'Yahoo Finance · 5 分鐘（可能延遲）';
+            statusEl.style.color = '#9ca3af';
+        }
+    } catch (error) {
+        console.warn('行情更新失敗；保留目前圖表資料：', error);
+        const statusEl = document.getElementById('index-status');
+        if (statusEl) {
+            statusEl.innerText = '⚠ 行情更新失敗，顯示上次取得的資料';
+            statusEl.style.color = '#f59e0b';
+        }
+    } finally {
+        isPollingMarket = false;
+    }
+}
+
+function renderPriceSummary(candle) {
     const priceEl = document.getElementById('current-price');
     const changeEl = document.getElementById('price-change');
-    if (priceEl && changeEl) {
-        priceEl.innerText = activeClose.toFixed(2);
-        const diff = (activeClose - activeOpen).toFixed(2);
-        const percent = activeOpen > 0 ? ((diff / activeOpen) * 100).toFixed(2) : '0.00';
-        if (diff >= 0) {
-            priceEl.className = "current-price text-green";
-            changeEl.className = "price-change text-green";
-            changeEl.innerText = `+${diff} (+${percent}%)`;
-        } else {
-            priceEl.className = "current-price text-red";
-            changeEl.className = "price-change text-red";
-            changeEl.innerText = `${diff} (${percent}%)`;
-        }
+    if (!priceEl || !changeEl || !candle) return;
+
+    const base = Number(candle.open) || Number(candle.close) || 0;
+    const diff = Number((candle.close - base).toFixed(2));
+    const percent = base > 0 ? ((diff / base) * 100).toFixed(2) : '0.00';
+
+    priceEl.innerText = Number(candle.close).toFixed(2);
+    if (diff >= 0) {
+        priceEl.className = 'current-price text-green';
+        changeEl.className = 'price-change text-green';
+        changeEl.innerText = '+' + diff.toFixed(2) + ' (+' + percent + '%)';
+    } else {
+        priceEl.className = 'current-price text-red';
+        changeEl.className = 'price-change text-red';
+        changeEl.innerText = diff.toFixed(2) + ' (' + percent + '%)';
     }
 }
 
 function updateMarketStatusText() {
-    const isOpen = checkTaiwanMarketOpen();
     const statusEl = document.getElementById('index-status');
-    if (statusEl) {
-        if (isOpen) {
-            statusEl.innerText = '🟢 Market Open';
-            statusEl.style.color = '#22c55e';
-        } else {
-            statusEl.innerText = '🔴 Market Closed';
-            statusEl.style.color = '#ef4444';
-        }
+    if (statusEl && !statusEl.innerText) {
+        statusEl.innerText = '正在連線至 5 分鐘行情 API…';
     }
 }
 
 async function saveToSupabase() {
-    await supabaseClient.from('stock_data').update({ 
-        history: candleList,
-        active_state: { open: activeOpen, high: activeHigh, low: activeLow, close: activeClose }
-    }).eq('id', 1);
+    if (!supabaseClient || !candleList.length) return false;
+
+    // Persist completed candles only; keep the in-progress bar in memory.
+    const completedHistory = candleList
+        .filter((bar) => completedCandleTimes.has(bar.time))
+        .slice(-MAX_HISTORY_LIMIT);
+    if (!completedHistory.length) return false;
+
+    const last = completedHistory[completedHistory.length - 1];
+    const { error } = await supabaseClient
+        .from('stock_data')
+        .update({
+            history: completedHistory,
+            active_state: { open: last.open, high: last.high, low: last.low, close: last.close }
+        })
+        .eq('id', 1);
+
+    if (error) {
+        console.error('批次儲存已完成 K 線失敗：', error);
+        return false;
+    }
+    return true;
 }
 
 initApp();
