@@ -4,6 +4,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 const MAX_HISTORY_LIMIT = 300; // 約 5 個交易日的 5 分鐘 K 線
 const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情
 const CANDLE_BATCH_SIZE = 5; // 累積 5 根已完成 K 線後才批次儲存
+const INITIAL_PRICE = 10.0; // 設定您的商品初始發行價為 10 元
 
 let marketPollTimer = null;
 let isPollingMarket = false;
@@ -21,6 +22,7 @@ let activeHigh = 10.0;
 let activeLow = 10.0;
 let activeCandleTime = Math.floor(Date.now() / 1000);
 let candleList = [];
+let baseIndexValue = null; // 用來記錄加權指數的基準點
 let holidayMap = {};
 let currentUser = null;
 let userWallet = { cash: 100000, shares: 0, username: '' };
@@ -352,11 +354,10 @@ function setupAuthListeners() {
 }
 
 /**
- * 核心：透過 allOrigins 直接抓取 Yahoo Finance 的台灣加權指數 (^TWII)
+ * 透過 allOrigins /raw 抓取 Yahoo Finance 的台灣加權指數 (^TWII)
  */
 async function fetchMarketBars() {
     const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETWII?interval=5m&range=5d';
-    // 改用 allOrigins 的 raw endpoint，通常可以繞過部分 CORS 限制
     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
 
     const response = await fetch(proxyUrl, { cache: 'no-store' });
@@ -364,7 +365,6 @@ async function fetchMarketBars() {
         throw new Error('Market API request failed: HTTP ' + response.status);
     }
 
-    // raw endpoint 直接回傳目標網址的 JSON 內容，不需要再取 .contents
     const payload = await response.json();
     const result = payload?.chart?.result?.[0];
     
@@ -410,13 +410,12 @@ async function fetchMarketBars() {
 }
 
 async function loadStockData() {
-    let bars = [];
+    let rawBars = [];
     try {
-        bars = await fetchMarketBars();
-        const sourceLabel = 'Yahoo Finance (台灣加權指數 · ^TWII) · 5分鐘';
+        rawBars = await fetchMarketBars();
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = sourceLabel;
+            statusEl.innerText = 'Yahoo Finance (台灣加權 10元連動) · 5分鐘';
             statusEl.style.color = '#9ca3af';
         }
     } catch (apiError) {
@@ -428,28 +427,38 @@ async function loadStockData() {
             .maybeSingle();
 
         if (!error && data && Array.isArray(data.history)) {
-            bars = data.history
-                .filter((bar) => bar && Number.isFinite(bar.time) && Number.isFinite(bar.open) && Number.isFinite(bar.high) && Number.isFinite(bar.low) && Number.isFinite(bar.close))
-                .slice(-MAX_HISTORY_LIMIT);
+            rawBars = data.history;
         }
 
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = bars.length ? '⚠ 外部行情暫時不可用；顯示 Supabase 快取（非即時）' : '⚠ 行情 API 無法使用，且沒有可用快取';
+            statusEl.innerText = rawBars.length ? '⚠ 外部行情暫時不可用；顯示 Supabase 快取' : '⚠ 行情 API 無法使用，且沒有可用快取';
             statusEl.style.color = '#f59e0b';
         }
     }
 
-    candleList = bars;
-    marketDataAvailable = bars.length > 0;
-    completedCandleTimes = new Set(bars.slice(0, Math.max(0, bars.length - 1)).map((bar) => bar.time));
-    pendingCompletedCandles = [];
-    lastRenderedTime = bars.length ? bars[bars.length - 1].time : null;
+    if (rawBars.length > 0) {
+        // 設定基準指數（第一筆資料的收盤價作為 10 元基準）
+        baseIndexValue = rawBars[0].close;
 
-    if (bars.length) {
-        candlestickSeries.setData(bars);
+        // 將加權指數轉換為 10 元發行價的等比例浮動價格
+        candleList = rawBars.map(bar => {
+            const open = Number((INITIAL_PRICE * (bar.open / baseIndexValue)).toFixed(2));
+            const high = Number((INITIAL_PRICE * (bar.high / baseIndexValue)).toFixed(2));
+            const low = Number((INITIAL_PRICE * (bar.low / baseIndexValue)).toFixed(2));
+            const close = Number((INITIAL_PRICE * (bar.close / baseIndexValue)).toFixed(2));
+            return { time: bar.time, open, high, low, close };
+        });
+
+        marketDataAvailable = true;
+        completedCandleTimes = new Set(candleList.slice(0, Math.max(0, candleList.length - 1)).map((bar) => bar.time));
+        pendingCompletedCandles = [];
+        lastRenderedTime = candleList[candleList.length - 1].time;
+
+        candlestickSeries.setData(candleList);
         chart.timeScale().scrollToRealTime();
-        const last = bars[bars.length - 1];
+
+        const last = candleList[candleList.length - 1];
         activeClose = last.close;
         activeOpen = last.open;
         activeHigh = last.high;
@@ -458,6 +467,7 @@ async function loadStockData() {
         renderPriceSummary(last);
     } else {
         candlestickSeries.setData([]);
+        marketDataAvailable = false;
     }
 }
 
@@ -466,13 +476,25 @@ async function refreshMarketData() {
     isPollingMarket = true;
 
     try {
-        const bars = await fetchMarketBars();
-        if (!bars.length) return;
+        const rawBars = await fetchMarketBars();
+        if (!rawBars.length) return;
+
+        if (!baseIndexValue && rawBars.length > 0) {
+            baseIndexValue = rawBars[0].close;
+        }
 
         marketDataAvailable = true;
         const previousLatestTime = lastRenderedTime;
 
-        for (const bar of bars) {
+        const convertedBars = rawBars.map(rawBar => ({
+            time: rawBar.time,
+            open: Number((INITIAL_PRICE * (rawBar.open / baseIndexValue)).toFixed(2)),
+            high: Number((INITIAL_PRICE * (rawBar.high / baseIndexValue)).toFixed(2)),
+            low: Number((INITIAL_PRICE * (rawBar.low / baseIndexValue)).toFixed(2)),
+            close: Number((INITIAL_PRICE * (rawBar.close / baseIndexValue)).toFixed(2))
+        }));
+
+        for (const bar of convertedBars) {
             if (lastRenderedTime === null || bar.time >= lastRenderedTime) {
                 candlestickSeries.update(bar);
                 lastRenderedTime = bar.time;
@@ -483,8 +505,8 @@ async function refreshMarketData() {
             chart.timeScale().scrollToRealTime();
         }
 
-        candleList = bars;
-        const latest = bars[bars.length - 1];
+        candleList = convertedBars;
+        const latest = convertedBars[convertedBars.length - 1];
         activeClose = latest.close;
         activeOpen = latest.open;
         activeHigh = latest.high;
@@ -492,11 +514,11 @@ async function refreshMarketData() {
         activeCandleTime = latest.time;
         renderPriceSummary(latest);
 
-        const currentTimes = new Set(bars.map((bar) => bar.time));
+        const currentTimes = new Set(convertedBars.map((bar) => bar.time));
         completedCandleTimes = new Set([...completedCandleTimes].filter((time) => currentTimes.has(time)));
 
         let addedCompletedBar = false;
-        for (const bar of bars.slice(0, -1)) {
+        for (const bar of convertedBars.slice(0, -1)) {
             if (!completedCandleTimes.has(bar.time)) {
                 completedCandleTimes.add(bar.time);
                 pendingCompletedCandles.push(bar);
@@ -511,7 +533,7 @@ async function refreshMarketData() {
 
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = 'Yahoo Finance (台灣加權指數 · ^TWII) · 5分鐘';
+            statusEl.innerText = 'Yahoo Finance (台灣加權 10元連動) · 5分鐘';
             statusEl.style.color = '#9ca3af';
         }
     } catch (error) {
