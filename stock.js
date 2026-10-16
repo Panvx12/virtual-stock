@@ -464,11 +464,15 @@ async function refreshMarketData() {
         marketDataAvailable = true;
 
         // Incremental update only: update the previous current candle and any new bars.
+        const previousLatestTime = lastRenderedTime;
         for (const bar of bars) {
             if (lastRenderedTime === null || bar.time >= lastRenderedTime) {
                 candlestickSeries.update(bar);
                 lastRenderedTime = bar.time;
             }
+        }
+        if (previousLatestTime !== null && lastRenderedTime > previousLatestTime) {
+            chart.timeScale().scrollToRealTime();
         }
 
         candleList = bars;
