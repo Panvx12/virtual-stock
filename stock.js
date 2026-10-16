@@ -6,7 +6,6 @@ const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 const MAX_HISTORY_LIMIT = 300; // 約 5 個交易日的 5 分鐘 K 線
 const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情；不會每次寫入 Supabase
 const CANDLE_BATCH_SIZE = 5; // 累積 5 根已完成 K 線後才批次儲存
-const MARKET_DATA_URL = SUPABASE_URL + '/functions/v1/market-data';
 
 let marketPollTimer = null;
 let isPollingMarket = false;
@@ -364,35 +363,40 @@ function setupAuthListeners() {
     }
 }
 
-async function fetchMarketBars() {
-    const response = await fetch(MARKET_DATA_URL, {
-        method: 'GET',
-        headers: { apikey: SUPABASE_ANON_KEY },
-        cache: 'no-store',
-    });
-    if (!response.ok) {
-        throw new Error('Market API request failed: HTTP ' + response.status);
-    }
+async function fetchTaiwanIndexTrend() {
+    try {
+        // 目標 Yahoo 股市網址（例如 Yahoo Finance 的台股加權指數 ^TWII JSON API 或頁面）
+        // 這裡以 Yahoo Finance API 為例
+        const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETWII?interval=1m';
+        
+        // 使用 AllOrigins 代理抓取
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
+        
+        const response = await fetch(proxyUrl);
+        if (!response.ok) throw new Error('Network response was not ok');
+        
+        const data = await response.json();
+        
+        // 解析 Yahoo Finance API 回傳的資料結構
+        const result = data.chart.result[0];
+        const meta = result.meta;
+        const currentPrice = meta.regularMarketPrice;
+        const previousClose = meta.chartPreviousClose || meta.previousClose;
+        
+        // 計算漲跌幅百分比
+        const percentChange = ((currentPrice - previousClose) / previousClose) * 100;
 
-    const payload = await response.json();
-    if (!payload || !Array.isArray(payload.bars) || payload.bars.length === 0) {
-        throw new Error((payload && payload.error) || '行情 API 沒有回傳 K 線資料');
-    }
+        // 同步更新全域變數，讓畫面的 activeClose 跟著 Yahoo 即時資料走
+        activeClose = currentPrice;
 
-    return payload.bars
-        .filter((bar) =>
-            Number.isFinite(bar.time) &&
-            Number.isFinite(bar.open) &&
-            Number.isFinite(bar.high) &&
-            Number.isFinite(bar.low) &&
-            Number.isFinite(bar.close) &&
-            bar.high >= Math.max(bar.open, bar.close) &&
-            bar.low <= Math.min(bar.open, bar.close) &&
-            bar.high >= bar.low
-        )
-        .sort((a, b) => a.time - b.time)
-        .filter((bar, index, all) => index === 0 || bar.time > all[index - 1].time)
-        .slice(-MAX_HISTORY_LIMIT);
+        return { 
+            percentChange: percentChange, 
+            totalDayPercent: percentChange 
+        };
+    } catch (error) {
+        console.error('Failed to fetch Yahoo data via AllOrigins:', error);
+        return null;
+    }
 }
 
 async function loadStockData() {
