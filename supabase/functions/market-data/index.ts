@@ -60,12 +60,12 @@ Deno.serve(async (req: Request) => {
     if (!quote) throw new Error("Yahoo Finance response has no OHLC values");
 
     const bars = result.timestamp.map((time: number, i: number) => ({
-      time: Number(time),
-      open: Number(quote.open?.[i]),
-      high: Number(quote.high?.[i]),
-      low: Number(quote.low?.[i]),
-      close: Number(quote.close?.[i]),
-      volume: Number(quote.volume?.[i] ?? 0),
+      time,
+      open: quote.open?.[i],
+      high: quote.high?.[i],
+      low: quote.low?.[i],
+      close: quote.close?.[i],
+      volume: quote.volume?.[i] ?? 0,
     })).filter((bar: any) =>
       Number.isFinite(bar.time) &&
       Number.isFinite(bar.open) &&
