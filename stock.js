@@ -171,7 +171,7 @@ function updateAuthUI(session) {
     if (session && session.user) {
         userInfo.style.display = 'inline';
         const displayName = userWallet.username || session.user.user_metadata?.username || session.user.email.split('@')[0];
-        userInfo.innerText = `👤 ${displayName}`;
+        userInfo.innerText = `${displayName}`;
         authActionBtn.innerText = 'Logout';
         if (tradingPanel) tradingPanel.style.display = 'flex';
         if (btnNewArticle) btnNewArticle.style.display = 'inline-block';
