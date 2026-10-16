@@ -47,11 +47,11 @@
         </div>
     </div>
 
-    <!-- 下方：文章專區區塊 (獨立卡片，位於股市下方) -->
+    <!-- 下方：文章專區區塊 -->
     <div class="articles-container">
         <div class="articles-header">
             <h2>鬆餅文章專區</h2>
-            <button id="btn-new-article" class="btn-primary">發佈文章</button>
+            <button id="btn-new-article" class="btn-primary" style="display: none;">發佈文章</button>
         </div>
 
         <!-- 發佈文章表單 (預設隱藏) -->
@@ -76,7 +76,6 @@
             <span id="close-modal" class="close">&times;</span>
             <h2>Member Login / Sign Up</h2>
             <form id="auth-form">
-                <!-- 💡 新增：用戶名輸入框 -->
                 <input type="text" id="auth-username" placeholder="用戶名 (註冊時填寫)" />
                 <input type="email" id="auth-email" placeholder="Email" required />
                 <input type="password" id="auth-password" placeholder="Password (min 6 characters)" required />

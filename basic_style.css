@@ -14,10 +14,9 @@ body {
     justify-content: flex-start;
     min-height: 100vh;
     padding: 30px 20px;
-    gap: 20px; /* 上下兩個區塊之間的間距 */
+    gap: 20px;
 }
 
-/* 股市卡片與文章專區共用外觀與最大寬度 */
 .stock-card, .articles-container {
     background-color: #1f2937;
     border: 1px solid #374151;
@@ -61,7 +60,6 @@ h1 {
     gap: 4px;
 }
 
-/* 會員按鈕與狀態樣式 */
 .user-bar {
     display: flex;
     align-items: center;
@@ -116,7 +114,6 @@ h1 {
     overflow: hidden;
 }
 
-/* 交易面板樣式 */
 .trading-panel {
     margin-top: 16px;
     background-color: #111827;
@@ -174,7 +171,6 @@ h1 {
 }
 .btn-sell:hover { background-color: #16a34a; }
 
-/* 獨立文章專區樣式 */
 .articles-header {
     display: flex;
     justify-content: space-between;
@@ -254,7 +250,6 @@ h1 {
     padding: 16px 0;
 }
 
-/* 彈出視窗 (Modal) 樣式 */
 .modal {
     position: fixed;
     z-index: 1000;

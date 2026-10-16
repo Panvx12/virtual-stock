@@ -1,14 +1,10 @@
-// ----------------------------------------------------
-// 0. Dynamic import of Lightweight Charts & Supabase config
-// ----------------------------------------------------
 const CHART_SCRIPT_URL = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
 
 const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co'; 
 const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 
-// 設定歷史 K 棒的最大保留數量上限（最多保留 500 筆）
 const MAX_HISTORY_LIMIT = 500;
-const UPDATE_FREQUENCY = 60000; // 💡 調整為 60 秒更新一次，符合 1 分鐘 K 棒頻率
+const UPDATE_FREQUENCY = 60000; // 60 秒更新一次
 
 let supabaseClient = null;
 let chart = null;
@@ -40,12 +36,11 @@ function loadScript(url) {
     });
 }
 
-// 🚀 Main Application Entry Point
 async function initApp() {
     try {
         await loadScript(CHART_SCRIPT_URL);
         supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-        window.supabaseClient = supabaseClient; // 讓 articles.js 能夠共用 Supabase 連線
+        window.supabaseClient = supabaseClient; 
 
         setupAuthListeners();
         setupTradingListeners();
@@ -72,7 +67,6 @@ async function initApp() {
             },
         });
 
-        // 建立 K 線圖系列，並為 10 元股價設定精準的小數位數與格式
         candlestickSeries = chart.addCandlestickSeries({
             upColor: '#ef4444',      
             downColor: '#22c55e',    
@@ -80,6 +74,7 @@ async function initApp() {
             borderDownColor: '#22c55e',
             wickUpColor: '#ef4444',
             wickDownColor: '#22c55e',
+            // 💡 關鍵：強制指定小數位數與最小跳動單位，才能在 10 元撐開 K 棒厚度
             priceFormat: {
                 type: 'price',
                 precision: 2,
@@ -99,16 +94,14 @@ async function initApp() {
             const trendData = await fetchTaiwanIndexTrend();
             if (!trendData) return;
 
-            // 針對 10 元級距設計的合理價格跳動範圍
             const stockChange = (Math.random() - 0.48) * 0.08; 
-            
             let newPrice = activeClose + stockChange;
             newPrice = parseFloat(newPrice.toFixed(2));
             if (newPrice < 0.5) newPrice = 0.5;
 
             activeClose = newPrice;
 
-            // 讓 10 元股價也能長出漂亮的上下影線與實體方塊
+
             const wickSpread = 0.02 + (Math.random() * 0.05);
             const currentHigh = parseFloat((Math.max(activeOpen, activeClose) + wickSpread).toFixed(2));
             const currentLow = parseFloat((Math.min(activeOpen, activeClose) - wickSpread).toFixed(2));
@@ -118,7 +111,6 @@ async function initApp() {
 
             const nowTime = Math.floor(Date.now() / 1000);
             
-            // 💡 每 60 秒（1分鐘）推進一根新的 K 棒
             if (nowTime - activeCandleTime >= 60) {
                 const newCandle = {
                     time: activeCandleTime,
@@ -129,7 +121,6 @@ async function initApp() {
                 };
                 candleList.push(newCandle);
 
-                // 檢查並限制陣列長度不超過上限，超出時切除最舊的資料
                 if (candleList.length > MAX_HISTORY_LIMIT) {
                     candleList = candleList.slice(-MAX_HISTORY_LIMIT);
                     candlestickSeries.setData(candleList); 
@@ -162,7 +153,6 @@ async function initApp() {
             const changeEl = document.getElementById('price-change');
             if (priceEl) priceEl.innerText = activeClose.toFixed(2);
             
-            // 即時計算相對於當日開盤價（activeOpen）的漲跌金額與百分比
             const diff = (activeClose - activeOpen).toFixed(2);
             const percent = activeOpen > 0 ? ((diff / activeOpen) * 100).toFixed(2) : '0.00';
             
@@ -187,13 +177,10 @@ async function initApp() {
     } catch (error) {
         console.error('Application initialization failed:', error);
         const statusEl = document.getElementById('index-status');
-        if (statusEl) statusEl.innerText = 'Loading failed; please check your network or script source.';
+        if (statusEl) statusEl.innerText = 'Loading failed; please check your network.';
     }
 }
 
-// ----------------------------------------------------
-// Authentication & Wallet Functions
-// ----------------------------------------------------
 async function checkUserSession() {
     const { data: { session } } = await supabaseClient.auth.getSession();
     if (session && session.user) {
@@ -429,9 +416,6 @@ function setupAuthListeners() {
     }
 }
 
-// ----------------------------------------------------
-// Helper Functions (Calendar & Smart Trend Simulation)
-// ----------------------------------------------------
 async function loadTaiwanCalendar() {
     try {
         const now = new Date();
@@ -512,7 +496,6 @@ async function loadStockData() {
     }
     updateMarketStatusText();
     
-    // 載入歷史資料後立即更新一次畫面的價格與百分比
     const priceEl = document.getElementById('current-price');
     const changeEl = document.getElementById('price-change');
     if (priceEl && changeEl) {
