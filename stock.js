@@ -2,7 +2,7 @@ const CHART_SCRIPT_URL = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightw
 const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 const MAX_HISTORY_LIMIT = 100; 
-const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情，避免超出額度
+const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情
 const CANDLE_BATCH_SIZE = 5;
 const INITIAL_PRICE = 10.0; // 商品固定初始發行價 10 元
 
