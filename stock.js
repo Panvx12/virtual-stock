@@ -3,7 +3,7 @@ const CHART_SCRIPT_URL = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightw
 const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co'; 
 const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 
-const MAX_HISTORY_LIMIT = 500;
+const MAX_HISTORY_LIMIT = 50;
 const UPDATE_FREQUENCY = 60000; // 60 秒更新一次
 
 let supabaseClient = null;
