@@ -8,6 +8,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 
 // 設定歷史 K 棒的最大保留數量上限（例如最多保留 500 筆，可依需求自行調整）
 const MAX_HISTORY_LIMIT = 500;
+const UPDATE_FREQUENCY = 30000
 
 let supabaseClient = null;
 let chart = null;
@@ -161,7 +162,7 @@ async function initApp() {
                 changeEl.innerText = `${diff} (${percent}%)`;
             }
 
-        }, 10000);
+        }, UPDATE_FREQUENCY);
 
         window.addEventListener('resize', () => {
             chart.resize(chartContainer.clientWidth, 300);
