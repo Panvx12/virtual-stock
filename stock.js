@@ -67,14 +67,15 @@ async function initApp() {
             },
         });
 
+        // 💡 完整調整：加強 K 棒實體、邊框與影線的顯示效果
         candlestickSeries = chart.addCandlestickSeries({
-            upColor: '#ef4444',      
-            downColor: '#22c55e',    
+            upColor: '#ef4444',          // 紅漲
+            downColor: '#22c55e',        // 綠跌
             borderUpColor: '#ef4444',
             borderDownColor: '#22c55e',
             wickUpColor: '#ef4444',
             wickDownColor: '#22c55e',
-            // 💡 關鍵：強制指定小數位數與最小跳動單位，才能在 10 元撐開 K 棒厚度
+            wickVisible: true,           // 強制顯示上下影線
             priceFormat: {
                 type: 'price',
                 precision: 2,
@@ -94,15 +95,16 @@ async function initApp() {
             const trendData = await fetchTaiwanIndexTrend();
             if (!trendData) return;
 
-            const stockChange = (Math.random() - 0.48) * 0.08; 
+            // 💡 放大價格隨機波動振幅，使 K 棒高低起伏更明顯
+            const stockChange = (Math.random() - 0.48) * 0.15; 
             let newPrice = activeClose + stockChange;
             newPrice = parseFloat(newPrice.toFixed(2));
             if (newPrice < 0.5) newPrice = 0.5;
 
             activeClose = newPrice;
 
-
-            const wickSpread = 0.02 + (Math.random() * 0.05);
+            // 💡 放大影線範圍，使高低點更飽滿
+            const wickSpread = 0.04 + (Math.random() * 0.08);
             const currentHigh = parseFloat((Math.max(activeOpen, activeClose) + wickSpread).toFixed(2));
             const currentLow = parseFloat((Math.min(activeOpen, activeClose) - wickSpread).toFixed(2));
 
