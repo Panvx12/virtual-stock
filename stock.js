@@ -2,9 +2,9 @@ const CHART_SCRIPT_URL = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightw
 const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 const MAX_HISTORY_LIMIT = 100; 
-const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情（避免超出額度）[cite: 1]
-const CANDLE_BATCH_SIZE = 5;[cite: 1]
-const INITIAL_PRICE = 10.0; // 設定起始發行價為 10 元
+const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情，避免超出額度
+const CANDLE_BATCH_SIZE = 5;
+const INITIAL_PRICE = 10.0; // 商品固定初始發行價 10 元
 
 let marketPollTimer = null;
 let isPollingMarket = false;
@@ -22,7 +22,7 @@ let activeHigh = 10.0;
 let activeLow = 10.0;
 let activeCandleTime = Math.floor(Date.now() / 1000);
 let candleList = [];
-let baseIndexValue = null; 
+let baseIndexValue = null; // 用來記錄加權指數的基準點
 let currentUser = null;
 let userWallet = { cash: 100000, shares: 0, username: '' };
 
@@ -353,7 +353,7 @@ function setupAuthListeners() {
 }
 
 /**
- * 透過 allOrigins /raw 抓取 5 分鐘級距 (interval=5m, range=1d) 的台灣加權指數 (^TWII)
+ * 透過 allOrigins /raw 抓取 5 分鐘級距 (interval=5m, range=1d) 的台灣加權指數 (^TWII) 當日即時走勢
  */
 async function fetchMarketBars() {
     const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETWII?interval=5m&range=1d';
@@ -368,7 +368,7 @@ async function fetchMarketBars() {
     const result = payload?.chart?.result?.[0];
     
     if (!result || !result.timestamp || !result.indicators?.quote?.[0]) {
-        throw new Error('Yahoo Finance API 沒有回傳有效的 5 分鐘 K 線資料');
+        throw new Error('Yahoo Finance API 沒有回傳有效的當日 5 分鐘 K 線資料');
     }
 
     const timestamps = result.timestamp;
@@ -394,7 +394,7 @@ async function fetchMarketBars() {
     }
 
     if (bars.length === 0) {
-        throw new Error('解析後的 5 分鐘 K 線資料為空');
+        throw new Error('解析後的當日 K 線資料為空');
     }
 
     return bars
@@ -413,7 +413,7 @@ async function loadStockData() {
         rawBars = await fetchMarketBars();
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = 'Yahoo Finance (台灣加權 5分即時) · 5分鐘';
+            statusEl.innerText = '松餅股市行情 (以 10 元發行價連動加權指數)';
             statusEl.style.color = '#9ca3af';
         }
     } catch (apiError) {
@@ -436,8 +436,10 @@ async function loadStockData() {
     }
 
     if (rawBars.length > 0) {
+        // 固定以當日第一筆資料作為 10 元基準點
         baseIndexValue = rawBars[0].close;
 
+        // 強制全部轉換為 10 元基底的價格
         candleList = rawBars.map(bar => {
             const open = Number((INITIAL_PRICE * (bar.open / baseIndexValue)).toFixed(2));
             const high = Number((INITIAL_PRICE * (bar.high / baseIndexValue)).toFixed(2));
@@ -529,7 +531,7 @@ async function refreshMarketData() {
 
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = 'Yahoo Finance (台灣加權 5分即時) · 5分鐘';
+            statusEl.innerText = '松餅股市行情 (以 10 元發行價連動加權指數)';
             statusEl.style.color = '#9ca3af';
         }
     } catch (error) {
@@ -563,7 +565,7 @@ function renderPriceSummary(candle) {
 function updateMarketStatusText() {
     const statusEl = document.getElementById('index-status');
     if (statusEl && !statusEl.innerText) {
-        statusEl.innerText = '正在連線至 Yahoo Finance 行情 API…';
+        statusEl.innerText = '正在連線至 Yahoo Finance 即時行情 API…';
     }
 }
 
