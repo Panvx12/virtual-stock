@@ -227,6 +227,10 @@ function setupTradingListeners() {
 
     if (btnSell) {
         btnSell.addEventListener('click', async () => {
+            if (!marketDataAvailable) {
+                alert('Market data is unavailable. Trading is temporarily disabled.');
+                return;
+            }
             if (!currentUser) {
                 alert('Please login first.');
                 return;
