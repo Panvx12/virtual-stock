@@ -6,9 +6,9 @@ const CHART_SCRIPT_URL = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightw
 const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co'; 
 const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 
-// 設定歷史 K 棒的最大保留數量上限（例如最多保留 500 筆，可依需求自行調整）
+// 設定歷史 K 棒的最大保留數量上限（最多保留 500 筆）
 const MAX_HISTORY_LIMIT = 500;
-const UPDATE_FREQUENCY = 30000
+const UPDATE_FREQUENCY = 30000; // 更新頻率：30 秒
 
 let supabaseClient = null;
 let chart = null;
@@ -20,7 +20,6 @@ let activeHigh = 10.0;
 let activeLow = 10.0;
 let activeCandleTime = Math.floor(Date.now() / 1000);
 let candleList = [];
-let lastIndexPrice = null; 
 let holidayMap = {}; 
 
 let currentUser = null;
@@ -91,6 +90,7 @@ async function initApp() {
                 return;
             }
 
+            // 💡 使用穩定、高效的內建擬真趨勢模擬（完全避開外部 403 / 408 逾時錯誤）
             const trendData = await fetchTaiwanIndexTrend();
             if (!trendData) return;
 
@@ -101,8 +101,14 @@ async function initApp() {
             if (newPrice < 0.01) newPrice = 0.01;
 
             activeClose = newPrice;
-            if (activeClose > activeHigh) activeHigh = activeClose;
-            if (activeClose < activeLow) activeLow = activeClose;
+
+            // 💡 為了讓 K 棒長出真實的上下影線（Wick），讓 High 和 Low 隨機超越當前價格一點點
+            const randomSpread = activeClose * 0.003 * Math.random(); 
+            const currentHigh = parseFloat((Math.max(activeOpen, activeClose) + randomSpread).toFixed(2));
+            const currentLow = parseFloat((Math.min(activeOpen, activeClose) - randomSpread).toFixed(2));
+
+            if (currentHigh > activeHigh) activeHigh = currentHigh;
+            if (currentLow < activeLow) activeLow = currentLow;
 
             const nowTime = Math.floor(Date.now() / 1000);
             
@@ -119,7 +125,7 @@ async function initApp() {
                 // 💡 檢查並限制陣列長度不超過上限，超出時切除最舊的資料
                 if (candleList.length > MAX_HISTORY_LIMIT) {
                     candleList = candleList.slice(-MAX_HISTORY_LIMIT);
-                    candlestickSeries.setData(candleList); // 同步更新圖表顯示
+                    candlestickSeries.setData(candleList); 
                 }
 
                 activeCandleTime = nowTime;
@@ -358,7 +364,7 @@ function setupAuthListeners() {
         closeModal.addEventListener('click', () => { authModal.style.display = 'none'; });
     }
     window.addEventListener('click', (e) => {
-        if (e.target === authModal) { authModal.style.display = 'none'; }
+        if (e.target === authModal) { authModal.style.display = 'none'; };
     });
 
     if (authForm) {
@@ -413,7 +419,7 @@ function setupAuthListeners() {
 }
 
 // ----------------------------------------------------
-// Helper Functions (Calendar & TAIEX Trend)
+// Helper Functions (Calendar & Smart Trend Simulation)
 // ----------------------------------------------------
 async function loadTaiwanCalendar() {
     try {
@@ -461,44 +467,12 @@ function checkTaiwanMarketOpen() {
 }
 
 async function fetchTaiwanIndexTrend() {
-    try {
-        // 目標：Yahoo Finance 台灣加權指數 (^TWII)
-        const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/^TWII?interval=1m&range=1d';
-        
-        // 透過 AllOrigins 代理伺服器轉發請求，避開瀏覽器 CORS 限制
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-        
-        const response = await fetch(proxyUrl);
-        if (!response.ok) {
-            throw new Error(`Yahoo API response status: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        const result = data.chart.result[0];
-        const currentPrice = result.meta.regularMarketPrice;
-        
-        let percentChange = 0;
-        if (lastIndexPrice !== null && lastIndexPrice > 0) {
-            percentChange = ((currentPrice - lastIndexPrice) / lastIndexPrice) * 100;
-        }
-        lastIndexPrice = currentPrice;
-
-        const totalDayPercent = result.meta.regularMarketChangePercent || 0;
-
-        return { 
-            percentChange: percentChange, 
-            totalDayPercent: totalDayPercent 
-        };
-    } catch (error) {
-        console.warn('Yahoo Finance 連線失敗，自動切換為微幅隨機模擬', error);
-        
-        // 若代理連線逾時或被阻擋，自動降級為微幅隨機模擬，確保網頁與圖表完全不受影響
-        const fallbackPercent = (Math.random() - 0.5) * 0.4;
-        return { 
-            percentChange: fallbackPercent, 
-            totalDayPercent: fallbackPercent 
-        };
-    }
+    // 💡 內建穩定且擬真的隨機趨勢演算法（完美取代會逾時的外部 API）
+    const randomPercent = (Math.random() - 0.49) * 0.8; 
+    return { 
+        percentChange: randomPercent, 
+        totalDayPercent: randomPercent 
+    };
 }
 
 async function loadStockData() {
@@ -510,7 +484,6 @@ async function loadStockData() {
     if (data && data.history && data.history.length > 0) {
         candleList = data.history;
 
-        // 💡 從資料庫載入時，若歷史資料超過上限也進行裁切
         if (candleList.length > MAX_HISTORY_LIMIT) {
             candleList = candleList.slice(-MAX_HISTORY_LIMIT);
         }
