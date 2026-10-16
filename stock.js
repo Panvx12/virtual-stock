@@ -94,25 +94,42 @@ async function initApp() {
             const trendData = await fetchTaiwanIndexTrend();
             if (!trendData) return;
 
-            // 💡 強制確保每一根 K 棒的開收盤價有明顯起伏，避免出現扁平橫線
-            let stockChange = (Math.random() - 0.48) * 0.2; 
-            if (Math.abs(stockChange) < 0.03) {
-                stockChange = stockChange >= 0 ? 0.03 : -0.03;
-            }
-            
-            let newPrice = activeOpen + stockChange;
-            newPrice = parseFloat(newPrice.toFixed(2));
+            // 模擬較自然的股價波動
+            // 以前一個價格為基準，避免每次都大幅漲跌
+            const previousPrice = activeClose;
+
+            // 使用多次隨機值，讓漲跌更接近自然波動
+            const volatility = Math.max(previousPrice * 0.002, 0.01);
+            const stockChange =
+                (Math.random() + Math.random() + Math.random() - 1.5)
+                * volatility;
+
+            let newPrice = parseFloat(
+                (previousPrice + stockChange).toFixed(2)
+            );
             if (newPrice < 0.5) newPrice = 0.5;
-
             activeClose = newPrice;
-
-            // 💡 放大上下影線範圍，使高低點更飽滿立體
-            const wickSpread = 0.05 + (Math.random() * 0.1);
-            const currentHigh = parseFloat((Math.max(activeOpen, activeClose) + wickSpread).toFixed(2));
-            const currentLow = parseFloat((Math.min(activeOpen, activeClose) - wickSpread).toFixed(2));
-
-            if (currentHigh > activeHigh) activeHigh = currentHigh;
-            if (currentLow < activeLow) activeLow = currentLow;
+            // 依據開盤價與目前價格，生成較小的上下影線
+            const wickSpread = Math.max(
+                previousPrice * (0.0005 + Math.random() * 0.002),
+                0.01
+            );
+            const currentHigh = parseFloat(
+                (Math.max(activeOpen, activeClose) + wickSpread).toFixed(2)
+            );
+            const currentLow = Math.max(
+                0.5,
+                parseFloat(
+                    (Math.min(activeOpen, activeClose) - wickSpread).toFixed(2)
+                )
+            );
+            // 持續記錄這根 K 棒的最高價與最低價
+            if (currentHigh > activeHigh) {
+                activeHigh = currentHigh;
+            }
+            if (currentLow < activeLow) {
+                activeLow = currentLow;
+            }
 
             const nowTime = Math.floor(Date.now() / 1000);
             
