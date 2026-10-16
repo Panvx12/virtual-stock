@@ -540,7 +540,7 @@ async function refreshMarketData() {
 
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = '松餅股市行情 (以 10 元發行價連動加權指數)';
+            statusEl.innerText = '鬆餅股市行情 (以 10 元發行價)';
             statusEl.style.color = '#9ca3af';
         }
     } catch (error) {
