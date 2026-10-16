@@ -469,7 +469,7 @@ async function loadStockData() {
 
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = fromSupabase ? '松餅股市行情 (已載入歷史紀錄)' : '松餅股市行情 (即時連線)';
+            statusEl.innerText = fromSupabase ? '鬆餅股市行情 (已載入歷史紀錄)' : '鬆餅股市行情 (即時連線)';
             statusEl.style.color = '#9ca3af';
         }
     } else {
