@@ -356,6 +356,7 @@ function setupAuthListeners() {
  */
 async function fetchMarketBars() {
     const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETWII?interval=5m&range=5d';
+    // 確保網址正確進行 encode
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
     const response = await fetch(proxyUrl, { cache: 'no-store' });
@@ -368,7 +369,8 @@ async function fetchMarketBars() {
         throw new Error('allOrigins 回傳格式錯誤');
     }
 
-    const payload = JSON.parse(wrapper.contents);
+    // allOrigins 的 contents 有時候會是字串，需要 parse 確保轉為物件
+    const payload = typeof wrapper.contents === 'string' ? JSON.parse(wrapper.contents) : wrapper.contents;
     const result = payload?.chart?.result?.[0];
     
     if (!result || !result.timestamp || !result.indicators?.quote?.[0]) {
