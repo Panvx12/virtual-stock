@@ -11,6 +11,7 @@ const MARKET_DATA_URL = SUPABASE_URL + '/functions/v1/market-data';
 let marketPollTimer = null;
 let isPollingMarket = false;
 let appInitialized = false;
+let marketDataAvailable = false;
 let lastRenderedTime = null;
 let completedCandleTimes = new Set();
 let pendingCompletedCandles = [];
@@ -195,6 +196,10 @@ function setupTradingListeners() {
 
     if (btnBuy) {
         btnBuy.addEventListener('click', async () => {
+            if (!marketDataAvailable) {
+                alert('Market data is unavailable. Trading is temporarily disabled.');
+                return;
+            }
             if (!currentUser) {
                 alert('Please login first.');
                 return;
@@ -267,12 +272,21 @@ function setupAuthListeners() {
     if (!authActionBtn || !authModal) return;
 
     supabaseClient.auth.onAuthStateChange(async (event, session) => {
+        // checkUserSession() handles the initial session, so do not load the wallet twice.
+        if (event === 'INITIAL_SESSION') return;
+
         if (session && session.user) {
+            const userChanged = !currentUser || currentUser.id !== session.user.id;
             currentUser = session.user;
-            await loadUserWallet(currentUser.id);
-        } else {
+            if (userChanged) {
+                await loadUserWallet(currentUser.id);
+            } else {
+                updateAuthUI({ user: currentUser });
+            }
+        } else if (currentUser) {
             currentUser = null;
             userWallet = { cash: 100000, shares: 0, username: '' };
+            updateWalletUI();
             updateAuthUI(null);
         }
     });
@@ -413,6 +427,7 @@ async function loadStockData() {
     }
 
     candleList = bars;
+    marketDataAvailable = bars.length > 0;
     completedCandleTimes = new Set(
         bars.slice(0, Math.max(0, bars.length - 1)).map((bar) => bar.time)
     );
@@ -442,6 +457,7 @@ async function refreshMarketData() {
     try {
         const bars = await fetchMarketBars();
         if (!bars.length) return;
+        marketDataAvailable = true;
 
         // Incremental update only: update the previous current candle and any new bars.
         for (const bar of bars) {
