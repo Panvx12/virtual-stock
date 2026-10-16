@@ -8,7 +8,7 @@ const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
 
 // 設定歷史 K 棒的最大保留數量上限（最多保留 500 筆）
 const MAX_HISTORY_LIMIT = 500;
-const UPDATE_FREQUENCY = 30000; // 更新頻率：30 秒
+const UPDATE_FREQUENCY = 60000; // 💡 調整為 60 秒更新一次，符合 1 分鐘 K 棒頻率
 
 let supabaseClient = null;
 let chart = null;
@@ -72,7 +72,7 @@ async function initApp() {
             },
         });
 
-        // 💡 建立 K 線圖系列，並為 10 元股價設定精準的小數位數與格式
+        // 建立 K 線圖系列，並為 10 元股價設定精準的小數位數與格式
         candlestickSeries = chart.addCandlestickSeries({
             upColor: '#ef4444',      
             downColor: '#22c55e',    
@@ -99,7 +99,7 @@ async function initApp() {
             const trendData = await fetchTaiwanIndexTrend();
             if (!trendData) return;
 
-            // 💡 針對 10 元級距設計的合理價格跳動範圍
+            // 針對 10 元級距設計的合理價格跳動範圍
             const stockChange = (Math.random() - 0.48) * 0.08; 
             
             let newPrice = activeClose + stockChange;
@@ -108,7 +108,7 @@ async function initApp() {
 
             activeClose = newPrice;
 
-            // 💡 讓 10 元股價也能長出漂亮的上下影線與實體方塊
+            // 讓 10 元股價也能長出漂亮的上下影線與實體方塊
             const wickSpread = 0.02 + (Math.random() * 0.05);
             const currentHigh = parseFloat((Math.max(activeOpen, activeClose) + wickSpread).toFixed(2));
             const currentLow = parseFloat((Math.min(activeOpen, activeClose) - wickSpread).toFixed(2));
@@ -118,7 +118,8 @@ async function initApp() {
 
             const nowTime = Math.floor(Date.now() / 1000);
             
-            if (nowTime - activeCandleTime >= 10) {
+            // 💡 每 60 秒（1分鐘）推進一根新的 K 棒
+            if (nowTime - activeCandleTime >= 60) {
                 const newCandle = {
                     time: activeCandleTime,
                     open: activeOpen,
@@ -128,7 +129,7 @@ async function initApp() {
                 };
                 candleList.push(newCandle);
 
-                // 💡 檢查並限制陣列長度不超過上限，超出時切除最舊的資料
+                // 檢查並限制陣列長度不超過上限，超出時切除最舊的資料
                 if (candleList.length > MAX_HISTORY_LIMIT) {
                     candleList = candleList.slice(-MAX_HISTORY_LIMIT);
                     candlestickSeries.setData(candleList); 
@@ -161,7 +162,7 @@ async function initApp() {
             const changeEl = document.getElementById('price-change');
             if (priceEl) priceEl.innerText = activeClose.toFixed(2);
             
-            // 💡 即時計算相對於當日開盤價（activeOpen）的漲跌金額與百分比
+            // 即時計算相對於當日開盤價（activeOpen）的漲跌金額與百分比
             const diff = (activeClose - activeOpen).toFixed(2);
             const percent = activeOpen > 0 ? ((diff / activeOpen) * 100).toFixed(2) : '0.00';
             
@@ -511,7 +512,7 @@ async function loadStockData() {
     }
     updateMarketStatusText();
     
-    // 💡 載入歷史資料後立即更新一次畫面的價格與百分比
+    // 載入歷史資料後立即更新一次畫面的價格與百分比
     const priceEl = document.getElementById('current-price');
     const changeEl = document.getElementById('price-change');
     if (priceEl && changeEl) {
