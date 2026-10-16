@@ -409,37 +409,40 @@ async function fetchMarketBars() {
 
 async function loadStockData() {
     let rawBars = [];
+    let fromSupabase = false;
+
+    // 1. 先嘗試從 Supabase 讀取之前儲存的歷史 K 線
     try {
-        rawBars = await fetchMarketBars();
-        const statusEl = document.getElementById('index-status');
-        if (statusEl) {
-            statusEl.innerText = '鬆餅股市行情 (每 5 分鐘更新)';
-            statusEl.style.color = '#9ca3af';
-        }
-    } catch (apiError) {
-        console.warn('外部行情暫時不可用，嘗試讀取 Supabase 快取：', apiError);
         const { data, error } = await supabaseClient
             .from('stock_data')
-            .select('history')
+            .select('history, active_state')
             .eq('id', 1)
             .maybeSingle();
 
-        if (!error && data && Array.isArray(data.history)) {
+        if (!error && data && Array.isArray(data.history) && data.history.length > 0) {
             rawBars = data.history;
+            fromSupabase = true;
         }
+    } catch (e) {
+        console.warn('讀取 Supabase 歷史快取失敗:', e);
+    }
 
-        const statusEl = document.getElementById('index-status');
-        if (statusEl) {
-            statusEl.innerText = rawBars.length ? '⚠ 外部行情暫時不可用；顯示快取' : '⚠ 行情 API 無法使用';
-            statusEl.style.color = '#f59e0b';
+    // 2. 如果 Supabase 沒有，才向 Yahoo Finance 抓取當日資料
+    if (rawBars.length === 0) {
+        try {
+            rawBars = await fetchMarketBars();
+        } catch (apiError) {
+            console.warn('外部行情 API 也無法使用:', apiError);
         }
     }
 
     if (rawBars.length > 0) {
-        // 固定以當日第一筆資料作為 10 元基準點
-        baseIndexValue = rawBars[0].close;
+        // 如果還沒有記錄過基準點，以歷史資料的第一筆作為 10 元基準
+        if (!baseIndexValue) {
+            baseIndexValue = rawBars[0].close;
+        }
 
-        // 強制全部轉換為 10 元基底的價格
+        // 轉換為 10 元發行價的價格
         candleList = rawBars.map(bar => {
             const open = Number((INITIAL_PRICE * (bar.open / baseIndexValue)).toFixed(2));
             const high = Number((INITIAL_PRICE * (bar.high / baseIndexValue)).toFixed(2));
@@ -463,6 +466,12 @@ async function loadStockData() {
         activeLow = last.low;
         activeCandleTime = last.time;
         renderPriceSummary(last);
+
+        const statusEl = document.getElementById('index-status');
+        if (statusEl) {
+            statusEl.innerText = fromSupabase ? '松餅股市行情 (已載入歷史紀錄)' : '松餅股市行情 (即時連線)';
+            statusEl.style.color = '#9ca3af';
+        }
     } else {
         candlestickSeries.setData([]);
         marketDataAvailable = false;
