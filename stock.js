@@ -480,15 +480,24 @@ async function refreshMarketData() {
         activeCandleTime = latest.time;
         renderPriceSummary(latest);
 
+        // Bound the completion tracker to the current 5-day window.
+        const currentTimes = new Set(bars.map((bar) => bar.time));
+        completedCandleTimes = new Set(
+            [...completedCandleTimes].filter((time) => currentTimes.has(time))
+        );
+
         // Yahoo's last bar may still be forming. Only bars preceding the last bar are considered complete.
+        let addedCompletedBar = false;
         for (const bar of bars.slice(0, -1)) {
             if (!completedCandleTimes.has(bar.time)) {
                 completedCandleTimes.add(bar.time);
                 pendingCompletedCandles.push(bar);
+                addedCompletedBar = true;
             }
         }
 
-        if (pendingCompletedCandles.length >= CANDLE_BATCH_SIZE) {
+        // If a write fails, retry on the next newly completed candle, not every polling cycle.
+        if (addedCompletedBar && pendingCompletedCandles.length >= CANDLE_BATCH_SIZE) {
             const saved = await saveToSupabase();
             if (saved) pendingCompletedCandles = [];
         }
