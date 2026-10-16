@@ -1,10 +1,10 @@
 const CHART_SCRIPT_URL = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
 const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
-const MAX_HISTORY_LIMIT = 300; // 約 5 個交易日的 5 分鐘 K 線
-const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情
-const CANDLE_BATCH_SIZE = 5; // 累積 5 根已完成 K 線後才批次儲存
-const INITIAL_PRICE = 10.0; // 設定您的商品初始發行價為 10 元
+const MAX_HISTORY_LIMIT = 100; 
+const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情（避免超出額度）[cite: 1]
+const CANDLE_BATCH_SIZE = 5;[cite: 1]
+const INITIAL_PRICE = 10.0; // 設定起始發行價為 10 元
 
 let marketPollTimer = null;
 let isPollingMarket = false;
@@ -22,8 +22,7 @@ let activeHigh = 10.0;
 let activeLow = 10.0;
 let activeCandleTime = Math.floor(Date.now() / 1000);
 let candleList = [];
-let baseIndexValue = null; // 用來記錄加權指數的基準點
-let holidayMap = {};
+let baseIndexValue = null; 
 let currentUser = null;
 let userWallet = { cash: 100000, shares: 0, username: '' };
 
@@ -354,10 +353,10 @@ function setupAuthListeners() {
 }
 
 /**
- * 透過 allOrigins /raw 抓取 Yahoo Finance 的台灣加權指數 (^TWII)
+ * 透過 allOrigins /raw 抓取 5 分鐘級距 (interval=5m, range=1d) 的台灣加權指數 (^TWII)
  */
 async function fetchMarketBars() {
-    const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETWII?interval=5m&range=5d';
+    const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETWII?interval=5m&range=1d';
     const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
 
     const response = await fetch(proxyUrl, { cache: 'no-store' });
@@ -369,7 +368,7 @@ async function fetchMarketBars() {
     const result = payload?.chart?.result?.[0];
     
     if (!result || !result.timestamp || !result.indicators?.quote?.[0]) {
-        throw new Error('Yahoo Finance API 沒有回傳有效的 K 線資料');
+        throw new Error('Yahoo Finance API 沒有回傳有效的 5 分鐘 K 線資料');
     }
 
     const timestamps = result.timestamp;
@@ -395,7 +394,7 @@ async function fetchMarketBars() {
     }
 
     if (bars.length === 0) {
-        throw new Error('解析後的 K 線資料為空');
+        throw new Error('解析後的 5 分鐘 K 線資料為空');
     }
 
     return bars
@@ -405,8 +404,7 @@ async function fetchMarketBars() {
             bar.high >= bar.low
         )
         .sort((a, b) => a.time - b.time)
-        .filter((bar, index, all) => index === 0 || bar.time > all[index - 1].time)
-        .slice(-MAX_HISTORY_LIMIT);
+        .filter((bar, index, all) => index === 0 || bar.time > all[index - 1].time);
 }
 
 async function loadStockData() {
@@ -415,11 +413,11 @@ async function loadStockData() {
         rawBars = await fetchMarketBars();
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = 'Yahoo Finance (台灣加權 10元連動) · 5分鐘';
+            statusEl.innerText = 'Yahoo Finance (台灣加權 5分即時) · 5分鐘';
             statusEl.style.color = '#9ca3af';
         }
     } catch (apiError) {
-        console.warn('外部行情暫時不可用，嘗試讀取既有 Supabase 快取：', apiError);
+        console.warn('外部行情暫時不可用，嘗試讀取 Supabase 快取：', apiError);
         const { data, error } = await supabaseClient
             .from('stock_data')
             .select('history')
@@ -432,16 +430,14 @@ async function loadStockData() {
 
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = rawBars.length ? '⚠ 外部行情暫時不可用；顯示 Supabase 快取' : '⚠ 行情 API 無法使用，且沒有可用快取';
+            statusEl.innerText = rawBars.length ? '⚠ 外部行情暫時不可用；顯示快取' : '⚠ 行情 API 無法使用';
             statusEl.style.color = '#f59e0b';
         }
     }
 
     if (rawBars.length > 0) {
-        // 設定基準指數（第一筆資料的收盤價作為 10 元基準）
         baseIndexValue = rawBars[0].close;
 
-        // 將加權指數轉換為 10 元發行價的等比例浮動價格
         candleList = rawBars.map(bar => {
             const open = Number((INITIAL_PRICE * (bar.open / baseIndexValue)).toFixed(2));
             const high = Number((INITIAL_PRICE * (bar.high / baseIndexValue)).toFixed(2));
@@ -533,16 +529,11 @@ async function refreshMarketData() {
 
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = 'Yahoo Finance (台灣加權 10元連動) · 5分鐘';
+            statusEl.innerText = 'Yahoo Finance (台灣加權 5分即時) · 5分鐘';
             statusEl.style.color = '#9ca3af';
         }
     } catch (error) {
-        console.warn('行情更新失敗；保留目前圖表資料：', error);
-        const statusEl = document.getElementById('index-status');
-        if (statusEl) {
-            statusEl.innerText = '⚠ 行情更新失敗，顯示上次取得的資料';
-            statusEl.style.color = '#f59e0b';
-        }
+        console.warn('行情更新失敗：', error);
     } finally {
         isPollingMarket = false;
     }
