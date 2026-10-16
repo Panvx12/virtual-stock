@@ -356,21 +356,16 @@ function setupAuthListeners() {
  */
 async function fetchMarketBars() {
     const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETWII?interval=5m&range=5d';
-    // 確保網址正確進行 encode
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
+    // 改用 allOrigins 的 raw endpoint，通常可以繞過部分 CORS 限制
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
 
     const response = await fetch(proxyUrl, { cache: 'no-store' });
     if (!response.ok) {
         throw new Error('Market API request failed: HTTP ' + response.status);
     }
 
-    const wrapper = await response.json();
-    if (!wrapper || !wrapper.contents) {
-        throw new Error('allOrigins 回傳格式錯誤');
-    }
-
-    // allOrigins 的 contents 有時候會是字串，需要 parse 確保轉為物件
-    const payload = typeof wrapper.contents === 'string' ? JSON.parse(wrapper.contents) : wrapper.contents;
+    // raw endpoint 直接回傳目標網址的 JSON 內容，不需要再取 .contents
+    const payload = await response.json();
     const result = payload?.chart?.result?.[0];
     
     if (!result || !result.timestamp || !result.indicators?.quote?.[0]) {
