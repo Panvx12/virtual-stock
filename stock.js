@@ -1,10 +1,8 @@
 const CHART_SCRIPT_URL = 'https://unpkg.com/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
-
-const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co'; 
+const SUPABASE_URL = 'https://jofmnltiasuvzozauwor.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_BLVholCvkP5hFi7lWLTVww_FHLu2JlF';
-
 const MAX_HISTORY_LIMIT = 300; // 約 5 個交易日的 5 分鐘 K 線
-const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情；不會每次寫入 Supabase
+const UPDATE_FREQUENCY = 60000; // 每 60 秒查詢一次外部行情
 const CANDLE_BATCH_SIZE = 5; // 累積 5 根已完成 K 線後才批次儲存
 
 let marketPollTimer = null;
@@ -14,19 +12,16 @@ let marketDataAvailable = false;
 let lastRenderedTime = null;
 let completedCandleTimes = new Set();
 let pendingCompletedCandles = [];
-
 let supabaseClient = null;
 let chart = null;
 let candlestickSeries = null;
-
 let activeClose = 10.0;
 let activeOpen = 10.0;
 let activeHigh = 10.0;
 let activeLow = 10.0;
 let activeCandleTime = Math.floor(Date.now() / 1000);
 let candleList = [];
-let holidayMap = {}; 
-
+let holidayMap = {};
 let currentUser = null;
 let userWallet = { cash: 100000, shares: 0, username: '' };
 
@@ -138,7 +133,6 @@ async function loadUserWallet(userId) {
         const { error: insertError } = await supabaseClient
             .from('user_data')
             .insert([initialWallet]);
-        
         if (!insertError) {
             userWallet = { cash: 100000, shares: 0, username: defaultUsername };
         }
@@ -208,16 +202,13 @@ function setupTradingListeners() {
                 alert('Please enter a valid quantity.');
                 return;
             }
-
             const totalCost = qty * activeClose;
             if (userWallet.cash < totalCost) {
                 alert('Insufficient cash balance!');
                 return;
             }
-
             userWallet.cash -= totalCost;
             userWallet.shares += qty;
-
             await saveUserWallet();
             updateWalletUI();
             alert(`Successfully bought ${qty} shares for ${totalCost.toFixed(2)} TWD.`);
@@ -239,16 +230,13 @@ function setupTradingListeners() {
                 alert('Please enter a valid quantity.');
                 return;
             }
-
             if (userWallet.shares < qty) {
                 alert('Insufficient shares to sell!');
                 return;
             }
-
             const totalRevenue = qty * activeClose;
             userWallet.cash += totalRevenue;
             userWallet.shares -= qty;
-
             await saveUserWallet();
             updateWalletUI();
             alert(`Successfully sold ${qty} shares for ${totalRevenue.toFixed(2)} TWD.`);
@@ -275,9 +263,7 @@ function setupAuthListeners() {
     if (!authActionBtn || !authModal) return;
 
     supabaseClient.auth.onAuthStateChange(async (event, session) => {
-        // checkUserSession() handles the initial session, so do not load the wallet twice.
         if (event === 'INITIAL_SESSION') return;
-
         if (session && session.user) {
             const userChanged = !currentUser || currentUser.id !== session.user.id;
             currentUser = session.user;
@@ -306,10 +292,15 @@ function setupAuthListeners() {
     });
 
     if (closeModal) {
-        closeModal.addEventListener('click', () => { authModal.style.display = 'none'; });
+        closeModal.addEventListener('click', () => {
+            authModal.style.display = 'none';
+        });
     }
+
     window.addEventListener('click', (e) => {
-        if (e.target === authModal) { authModal.style.display = 'none'; };
+        if (e.target === authModal) {
+            authModal.style.display = 'none';
+        }
     });
 
     if (authForm) {
@@ -317,10 +308,9 @@ function setupAuthListeners() {
             e.preventDefault();
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
-            
             authMessage.innerText = 'Processing...';
+
             const { error } = await supabaseClient.auth.signInWithPassword({ email, password });
-            
             if (error) {
                 authMessage.innerText = 'Login failed: ' + error.message;
             } else {
@@ -335,23 +325,21 @@ function setupAuthListeners() {
             const usernameInput = document.getElementById('auth-username').value.trim();
             const email = document.getElementById('auth-email').value;
             const password = document.getElementById('auth-password').value;
-            
+
             if (!email || !password) {
                 authMessage.innerText = 'Please enter email and password.';
                 return;
             }
 
             authMessage.innerText = 'Signing up...';
-            const { error } = await supabaseClient.auth.signUp({ 
-                email, 
+            const { error } = await supabaseClient.auth.signUp({
+                email,
                 password,
                 options: {
-                    data: {
-                        username: usernameInput || email.split('@')[0]
-                    }
+                    data: { username: usernameInput || email.split('@')[0] }
                 }
             });
-            
+
             if (error) {
                 authMessage.innerText = 'Sign up failed: ' + error.message;
             } else {
@@ -363,47 +351,72 @@ function setupAuthListeners() {
     }
 }
 
-async function fetchTaiwanIndexTrend() {
-    try {
-        // 目標 Yahoo 股市網址（例如 Yahoo Finance 的台股加權指數 ^TWII JSON API 或頁面）
-        // 這裡以 Yahoo Finance API 為例
-        const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETWII?interval=1m';
-        
-        // 使用 AllOrigins 代理抓取
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
-        
-        const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error('Network response was not ok');
-        
-        const data = await response.json();
-        
-        // 解析 Yahoo Finance API 回傳的資料結構
-        const result = data.chart.result[0];
-        const meta = result.meta;
-        const currentPrice = meta.regularMarketPrice;
-        const previousClose = meta.chartPreviousClose || meta.previousClose;
-        
-        // 計算漲跌幅百分比
-        const percentChange = ((currentPrice - previousClose) / previousClose) * 100;
+/**
+ * 核心：透過 allOrigins 直接抓取 Yahoo Finance 的台灣加權指數 (^TWII)
+ */
+async function fetchMarketBars() {
+    const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/%5ETWII?interval=5m&range=5d';
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
-        // 同步更新全域變數，讓畫面的 activeClose 跟著 Yahoo 即時資料走
-        activeClose = currentPrice;
-
-        return { 
-            percentChange: percentChange, 
-            totalDayPercent: percentChange 
-        };
-    } catch (error) {
-        console.error('Failed to fetch Yahoo data via AllOrigins:', error);
-        return null;
+    const response = await fetch(proxyUrl, { cache: 'no-store' });
+    if (!response.ok) {
+        throw new Error('Market API request failed: HTTP ' + response.status);
     }
+
+    const wrapper = await response.json();
+    if (!wrapper || !wrapper.contents) {
+        throw new Error('allOrigins 回傳格式錯誤');
+    }
+
+    const payload = JSON.parse(wrapper.contents);
+    const result = payload?.chart?.result?.[0];
+    
+    if (!result || !result.timestamp || !result.indicators?.quote?.[0]) {
+        throw new Error('Yahoo Finance API 沒有回傳有效的 K 線資料');
+    }
+
+    const timestamps = result.timestamp;
+    const quote = result.indicators.quote[0];
+    const bars = [];
+
+    for (let i = 0; i < timestamps.length; i++) {
+        const time = timestamps[i];
+        const open = quote.open?.[i];
+        const high = quote.high?.[i];
+        const low = quote.low?.[i];
+        const close = quote.close?.[i];
+
+        if (
+            Number.isFinite(time) &&
+            Number.isFinite(open) &&
+            Number.isFinite(high) &&
+            Number.isFinite(low) &&
+            Number.isFinite(close)
+        ) {
+            bars.push({ time, open, high, low, close });
+        }
+    }
+
+    if (bars.length === 0) {
+        throw new Error('解析後的 K 線資料為空');
+    }
+
+    return bars
+        .filter((bar) => 
+            bar.high >= Math.max(bar.open, bar.close) && 
+            bar.low <= Math.min(bar.open, bar.close) && 
+            bar.high >= bar.low
+        )
+        .sort((a, b) => a.time - b.time)
+        .filter((bar, index, all) => index === 0 || bar.time > all[index - 1].time)
+        .slice(-MAX_HISTORY_LIMIT);
 }
 
 async function loadStockData() {
     let bars = [];
     try {
         bars = await fetchMarketBars();
-        const sourceLabel = 'Yahoo Finance · 5 分鐘（可能延遲）';
+        const sourceLabel = 'Yahoo Finance (台灣加權指數 · ^TWII) · 5分鐘';
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
             statusEl.innerText = sourceLabel;
@@ -419,33 +432,26 @@ async function loadStockData() {
 
         if (!error && data && Array.isArray(data.history)) {
             bars = data.history
-                .filter((bar) => bar && Number.isFinite(bar.time) &&
-                    Number.isFinite(bar.open) && Number.isFinite(bar.high) &&
-                    Number.isFinite(bar.low) && Number.isFinite(bar.close))
+                .filter((bar) => bar && Number.isFinite(bar.time) && Number.isFinite(bar.open) && Number.isFinite(bar.high) && Number.isFinite(bar.low) && Number.isFinite(bar.close))
                 .slice(-MAX_HISTORY_LIMIT);
         }
 
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = bars.length
-                ? '⚠ 外部行情暫時不可用；顯示 Supabase 快取（非即時）'
-                : '⚠ 行情 API 無法使用，且沒有可用快取';
+            statusEl.innerText = bars.length ? '⚠ 外部行情暫時不可用；顯示 Supabase 快取（非即時）' : '⚠ 行情 API 無法使用，且沒有可用快取';
             statusEl.style.color = '#f59e0b';
         }
     }
 
     candleList = bars;
     marketDataAvailable = bars.length > 0;
-    completedCandleTimes = new Set(
-        bars.slice(0, Math.max(0, bars.length - 1)).map((bar) => bar.time)
-    );
+    completedCandleTimes = new Set(bars.slice(0, Math.max(0, bars.length - 1)).map((bar) => bar.time));
     pendingCompletedCandles = [];
     lastRenderedTime = bars.length ? bars[bars.length - 1].time : null;
 
     if (bars.length) {
         candlestickSeries.setData(bars);
         chart.timeScale().scrollToRealTime();
-
         const last = bars[bars.length - 1];
         activeClose = last.close;
         activeOpen = last.open;
@@ -465,16 +471,17 @@ async function refreshMarketData() {
     try {
         const bars = await fetchMarketBars();
         if (!bars.length) return;
-        marketDataAvailable = true;
 
-        // Incremental update only: update the previous current candle and any new bars.
+        marketDataAvailable = true;
         const previousLatestTime = lastRenderedTime;
+
         for (const bar of bars) {
             if (lastRenderedTime === null || bar.time >= lastRenderedTime) {
                 candlestickSeries.update(bar);
                 lastRenderedTime = bar.time;
             }
         }
+
         if (previousLatestTime !== null && lastRenderedTime > previousLatestTime) {
             chart.timeScale().scrollToRealTime();
         }
@@ -488,13 +495,9 @@ async function refreshMarketData() {
         activeCandleTime = latest.time;
         renderPriceSummary(latest);
 
-        // Bound the completion tracker to the current 5-day window.
         const currentTimes = new Set(bars.map((bar) => bar.time));
-        completedCandleTimes = new Set(
-            [...completedCandleTimes].filter((time) => currentTimes.has(time))
-        );
+        completedCandleTimes = new Set([...completedCandleTimes].filter((time) => currentTimes.has(time)));
 
-        // Yahoo's last bar may still be forming. Only bars preceding the last bar are considered complete.
         let addedCompletedBar = false;
         for (const bar of bars.slice(0, -1)) {
             if (!completedCandleTimes.has(bar.time)) {
@@ -504,7 +507,6 @@ async function refreshMarketData() {
             }
         }
 
-        // If a write fails, retry on the next newly completed candle, not every polling cycle.
         if (addedCompletedBar && pendingCompletedCandles.length >= CANDLE_BATCH_SIZE) {
             const saved = await saveToSupabase();
             if (saved) pendingCompletedCandles = [];
@@ -512,7 +514,7 @@ async function refreshMarketData() {
 
         const statusEl = document.getElementById('index-status');
         if (statusEl) {
-            statusEl.innerText = 'Yahoo Finance · 5 分鐘（可能延遲）';
+            statusEl.innerText = 'Yahoo Finance (台灣加權指數 · ^TWII) · 5分鐘';
             statusEl.style.color = '#9ca3af';
         }
     } catch (error) {
@@ -551,17 +553,17 @@ function renderPriceSummary(candle) {
 function updateMarketStatusText() {
     const statusEl = document.getElementById('index-status');
     if (statusEl && !statusEl.innerText) {
-        statusEl.innerText = '正在連線至 5 分鐘行情 API…';
+        statusEl.innerText = '正在連線至 Yahoo Finance 行情 API…';
     }
 }
 
 async function saveToSupabase() {
     if (!supabaseClient || !candleList.length) return false;
 
-    // Persist completed candles only; keep the in-progress bar in memory.
     const completedHistory = candleList
         .filter((bar) => completedCandleTimes.has(bar.time))
         .slice(-MAX_HISTORY_LIMIT);
+
     if (!completedHistory.length) return false;
 
     const last = completedHistory[completedHistory.length - 1];
