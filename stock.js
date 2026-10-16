@@ -462,33 +462,42 @@ function checkTaiwanMarketOpen() {
 
 async function fetchTaiwanIndexTrend() {
     try {
-        // 使用 AllOrigins 代理來繞過證交所 JSON 的 CORS 限制
-        const targetUrl = 'https://openapi.twse.com.tw/v1/exchangeReport/MI_INDEX?response=json';
+        // 目標：Yahoo Finance 台灣加權指數 (^TWII)
+        const targetUrl = 'https://query1.finance.yahoo.com/v8/finance/chart/^TWII?interval=1m&range=1d';
+        
+        // 透過 AllOrigins 代理伺服器轉發請求，避開瀏覽器 CORS 限制
         const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`;
         
         const response = await fetch(proxyUrl);
-        if (!response.ok) throw new Error('Proxy response not ok');
+        if (!response.ok) {
+            throw new Error(`Yahoo API response status: ${response.status}`);
+        }
         
         const data = await response.json();
-        
-        // 從證交所回傳的陣列中找尋加權指數
-        const taiexItem = data.find(item => item.I === '發行量加權股價指數' || item.Title === '發行量加權股價指數');
+        const result = data.chart.result[0];
+        const currentPrice = result.meta.regularMarketPrice;
         
         let percentChange = 0;
-        if (taiexItem) {
-            const rawChange = taiexItem.Change || taiexItem.漲跌幅度 || '0';
-            percentChange = parseFloat(rawChange.replace('%', '')) || 0;
+        if (lastIndexPrice !== null && lastIndexPrice > 0) {
+            percentChange = ((currentPrice - lastIndexPrice) / lastIndexPrice) * 100;
         }
+        lastIndexPrice = currentPrice;
+
+        const totalDayPercent = result.meta.regularMarketChangePercent || 0;
 
         return { 
             percentChange: percentChange, 
-            totalDayPercent: percentChange 
+            totalDayPercent: totalDayPercent 
         };
     } catch (error) {
-        console.warn('證交所 JSON 讀取失敗，切換為平穩微幅模擬', error);
-        // 若代理或網路不通，自動降級為微幅隨機波動，確保網頁不當機
+        console.warn('Yahoo Finance 連線失敗，自動切換為微幅隨機模擬', error);
+        
+        // 若代理連線逾時或被阻擋，自動降級為微幅隨機模擬，確保網頁與圖表完全不受影響
         const fallbackPercent = (Math.random() - 0.5) * 0.4;
-        return { percentChange: fallbackPercent, totalDayPercent: fallbackPercent };
+        return { 
+            percentChange: fallbackPercent, 
+            totalDayPercent: fallbackPercent 
+        };
     }
 }
 
